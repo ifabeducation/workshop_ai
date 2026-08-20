@@ -1,8 +1,7 @@
 "use client";
 
-import { startTransition, use, useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Lock, LockOpen, LogOut, Users, Copy, FileDown, Trash2 } from "lucide-react";
 import {
   facilitatorMe,
@@ -13,13 +12,15 @@ import {
   deleteSession,
 } from "@/lib/clientApi";
 import { clearFacilitatorCode, saveFacilitatorCode } from "@/lib/participantStorage";
-import { DOMANDE, DOMANDA_CRITERI_TACITI } from "@/config/block1Frizione";
+import { DOMANDE } from "@/config/block1Frizione";
 import { BLOCK2_FIELDS } from "@/config/block2Form";
 import { calcolaEsiti } from "@/lib/frizioneScoring";
+import { buildFacilitatorAnalytics } from "@/lib/facilitatorAnalytics";
 import { nowMs } from "@/lib/time";
 import { downloadUseCasePdf } from "@/lib/useCasePdf";
 import { Participant, Submission, UnlockedSteps, DEFAULT_UNLOCKED_STEPS } from "@/lib/types";
 import TestFillButton from "@/components/TestFillButton";
+import FacilitatorAnalyticsDashboard from "@/components/facilitator/FacilitatorAnalyticsDashboard";
 
 const POLL_MS = 4000;
 
@@ -173,23 +174,9 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
     pdf.save(`workshop-ai-adoption-sessione-${code}.pdf`);
   }
 
-  if (!authChecked) return null;
+  const analytics = useMemo(() => buildFacilitatorAnalytics(rows), [rows]);
 
-  // Quante persone hanno segnalato attrito su ciascuna attività di riferimento
-  // (una domanda può mappare più attività: contano tutte).
-  const attivitaCounts = new Map<string, number>();
-  for (const { submission } of rows) {
-    const attivitaPersona = new Set<string>();
-    for (const domanda of DOMANDE) {
-      if (domanda.id === DOMANDA_CRITERI_TACITI) continue;
-      if (submission.step1?.risposte?.[String(domanda.id)]?.risposta !== "si") continue;
-      domanda.attivita.forEach((a) => attivitaPersona.add(a));
-    }
-    attivitaPersona.forEach((a) => attivitaCounts.set(a, (attivitaCounts.get(a) ?? 0) + 1));
-  }
-  const activityCounts = Array.from(attivitaCounts.entries())
-    .map(([attivita, conteggio]) => ({ attivita, conteggio }))
-    .sort((a, b) => b.conteggio - a.conteggio);
+  if (!authChecked) return null;
 
   return (
     <div className="min-h-screen bg-ifab-navy">
@@ -248,7 +235,7 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-8">
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-8">
         {error && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700">
             <span>{error}</span>
@@ -419,22 +406,7 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
             </div>
           </section>
 
-          <section>
-            <h2 className="mb-3 text-sm font-semibold text-ifab-navy">
-              Attrito segnalato per attività di riferimento
-            </h2>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={activityCounts} layout="vertical" margin={{ left: 24, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="attivita" width={180} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="conteggio" fill="#1b98e0" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
+          <FacilitatorAnalyticsDashboard analytics={analytics} />
         </div>
       </main>
     </div>
