@@ -6,6 +6,8 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
+  Pie,
+  PieChart,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -24,7 +26,6 @@ import type {
   QuestionSelectionDatum,
   ScatterDatum,
   ScoreBucketDatum,
-  UseCaseOptionDatum,
 } from "@/lib/facilitatorAnalytics";
 
 const EMPTY_MESSAGE = "Non ci sono ancora dati sufficienti per questo grafico.";
@@ -91,6 +92,20 @@ function ScoreBucketTooltip({ active, payload }: ChartTooltipProps<ScoreBucketDa
       <p className="font-semibold text-ifab-navy">Fascia {item.range}</p>
       <p>{item.count} candidate</p>
       <p>{formatPercentage(item.percentage)} del totale</p>
+      {item.areas.length > 0 && (
+        <div className="mt-2 border-t border-ifab-border pt-2">
+          <p className="mb-1 font-semibold text-ifab-navy">Composizione per area</p>
+          {item.areas.map((area) => (
+            <p key={area.key} className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: area.color }} />
+                {area.label}
+              </span>
+              <span className="font-semibold">{area.count}</span>
+            </p>
+          ))}
+        </div>
+      )}
     </TooltipBox>
   );
 }
@@ -149,7 +164,7 @@ function AreaCountTooltip({ active, payload }: ChartTooltipProps<AreaDatum>) {
   return (
     <TooltipBox>
       <p className="font-semibold text-ifab-navy">{item.label}</p>
-      <p>{item.yesCount} risposte Sì</p>
+      <p>{item.yesCount} risposte Sì — {formatPercentage(item.percentage)}</p>
     </TooltipBox>
   );
 }
@@ -169,20 +184,10 @@ function ScatterTooltip({ active, payload }: ChartTooltipProps<ScatterDatum>) {
   );
 }
 
-function UseCaseTooltip({ active, payload }: ChartTooltipProps<UseCaseOptionDatum>) {
-  const item = payload?.[0]?.payload;
-  if (!active || !item) return null;
-  return (
-    <TooltipBox>
-      <p className="font-semibold text-ifab-navy">{item.label}</p>
-      <p>{item.count} partecipanti — {formatPercentage(item.percentage)}</p>
-    </TooltipBox>
-  );
-}
-
 export default function FacilitatorAnalyticsDashboard({ analytics }: { analytics: FacilitatorAnalytics }) {
   const areaImpactData = analytics.areas.filter((area) => area.ratingCount > 0);
-  const hasAreaCounts = analytics.areas.some((area) => area.yesCount > 0);
+  const areaSignalData = analytics.areas.filter((area) => area.yesCount > 0);
+  const hasAreaCounts = areaSignalData.length > 0;
 
   return (
     <section className="mt-8 border-t border-ifab-border pt-7">
@@ -234,19 +239,40 @@ export default function FacilitatorAnalyticsDashboard({ analytics }: { analytics
         </ChartCard>
 
         <ChartCard title="Segnalazioni per area" hasData={hasAreaCounts}>
-          <div className="h-72 w-full">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={analytics.areas} margin={{ top: 18, right: 12, bottom: 34, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" angle={-18} textAnchor="end" interval={0} tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <PieChart>
                 <Tooltip content={<AreaCountTooltip />} />
-                <Bar dataKey="yesCount" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-                  {analytics.areas.map((area) => <Cell key={area.key} fill={area.color} />)}
-                  <LabelList dataKey="yesCount" position="top" fill={NAVY} fontSize={11} />
-                </Bar>
-              </BarChart>
+                <Pie
+                  data={areaSignalData}
+                  dataKey="yesCount"
+                  nameKey="label"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={58}
+                  outerRadius={92}
+                  paddingAngle={2}
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                >
+                  {areaSignalData.map((area) => <Cell key={area.key} fill={area.color} />)}
+                </Pie>
+              </PieChart>
             </ResponsiveContainer>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {areaSignalData.map((area) => (
+              <div key={area.key} className="flex items-center justify-between gap-3 text-xs">
+                <span className="flex items-center gap-2 text-ifab-text">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: area.color }} />
+                  {area.label}
+                </span>
+                <span className="font-semibold text-ifab-navy">
+                  {area.yesCount} · {formatPercentage(area.percentage)}
+                </span>
+              </div>
+            ))}
           </div>
         </ChartCard>
 
@@ -340,39 +366,6 @@ export default function FacilitatorAnalyticsDashboard({ analytics }: { analytics
         </ChartCard>
       </div>
 
-      <div className="mb-4 mt-8">
-        <h2 className="text-lg font-semibold text-ifab-navy">Scelte aggregate dei Use Case</h2>
-        <p className="mt-1 text-xs text-ifab-text-muted">Sono inclusi soltanto i campi a scelta singola o multipla.</p>
-      </div>
-
-      {analytics.useCaseFields.length === 0 ? (
-        <div className="rounded-xl border border-ifab-border bg-white p-4">
-          <p className="py-12 text-center text-sm text-ifab-text-muted">{EMPTY_MESSAGE}</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          {analytics.useCaseFields.map((field) => (
-            <ChartCard key={field.id} title={field.label} hasData>
-              <p className="mb-2 text-[11px] text-ifab-text-muted">
-                {field.responseCount} rispondenti · {field.type === "checkbox" ? "scelta multipla" : "scelta singola"}
-              </p>
-              <div style={{ height: Math.max(220, field.options.length * 40) }} className="w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={field.options} layout="vertical" margin={{ top: 4, right: 72, bottom: 4, left: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                    <YAxis type="category" dataKey="chartLabel" width={190} tick={{ fontSize: 10 }} />
-                    <Tooltip content={<UseCaseTooltip />} />
-                    <Bar dataKey="count" fill={BLUE} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-                      <LabelList dataKey="displayValue" position="right" fill={NAVY} fontSize={10} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </ChartCard>
-          ))}
-        </div>
-      )}
     </section>
   );
 }

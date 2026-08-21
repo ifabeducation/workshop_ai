@@ -1,7 +1,13 @@
 import { BLOCCHI, DOMANDE, DOMANDA_CRITERI_TACITI } from "@/config/block1Frizione";
-import { BLOCK2_FIELDS } from "@/config/block2Form";
 import { calcolaEsiti } from "@/lib/frizioneScoring";
 import type { FrizioneBlocco, Participant, Submission } from "@/lib/types";
+
+const PROFESSIONAL_AREA_LABELS: Record<FrizioneBlocco, string> = {
+  sposti: "Gestione e trasferimento dei dati",
+  controlli: "Monitoraggio e controllo",
+  scrivi: "Produzione di contenuti",
+  decidi: "Processi decisionali",
+};
 
 export type FacilitatorRow = {
   participant: Participant;
@@ -21,6 +27,12 @@ export type ScoreBucketDatum = {
   count: number;
   percentage: number;
   displayValue: string;
+  areas: {
+    key: FrizioneBlocco;
+    label: string;
+    color: string;
+    count: number;
+  }[];
 };
 
 export type QuestionSelectionDatum = {
@@ -51,6 +63,7 @@ export type AreaDatum = {
   label: string;
   color: string;
   yesCount: number;
+  percentage: number;
   averageImpact: number;
   ratingCount: number;
 };
@@ -66,23 +79,6 @@ export type ScatterDatum = {
   score: number;
 };
 
-export type UseCaseOptionDatum = {
-  value: string;
-  label: string;
-  chartLabel: string;
-  count: number;
-  percentage: number;
-  displayValue: string;
-};
-
-export type UseCaseFieldDatum = {
-  id: string;
-  label: string;
-  type: "radio" | "checkbox";
-  responseCount: number;
-  options: UseCaseOptionDatum[];
-};
-
 export type FacilitatorAnalytics = {
   bestScores: BestScoreDatum[];
   participantsWithoutScore: number;
@@ -94,7 +90,6 @@ export type FacilitatorAnalytics = {
   participantsWithAnswers: number;
   areas: AreaDatum[];
   scatterPoints: ScatterDatum[];
-  useCaseFields: UseCaseFieldDatum[];
 };
 
 const roundOne = (value: number): number => Math.round(value * 10) / 10;
@@ -117,7 +112,7 @@ function shortQuestion(id: number, text: string): string {
 
 export function buildFacilitatorAnalytics(rows: FacilitatorRow[]): FacilitatorAnalytics {
   const bestScores: BestScoreDatum[] = [];
-  const allScores: number[] = [];
+  const evaluatedResults: { score: number; areaKey: FrizioneBlocco }[] = [];
   const scatterPoints: ScatterDatum[] = [];
   const activityCounts = new Map<string, number>();
   let participantsWithAnswers = 0;
@@ -150,11 +145,11 @@ export function buildFacilitatorAnalytics(rows: FacilitatorRow[]): FacilitatorAn
     }
 
     for (const result of results) {
-      allScores.push(result.punteggio);
+      evaluatedResults.push({ score: result.punteggio, areaKey: result.blocco });
       scatterPoints.push({
         participant: participant.name,
         candidate: result.nome,
-        area: BLOCCHI[result.blocco].label,
+        area: PROFESSIONAL_AREA_LABELS[result.blocco],
         areaKey: result.blocco,
         color: BLOCCHI[result.blocco].colore,
         impact: roundOne(result.impatto),
@@ -207,18 +202,33 @@ export function buildFacilitatorAnalytics(rows: FacilitatorRow[]): FacilitatorAn
     { range: "81–100", upper: 100 },
   ];
   const bucketCounts = bucketDefinitions.map(() => 0);
-  for (const score of allScores) {
-    const index = bucketDefinitions.findIndex((bucket) => score <= bucket.upper);
+  const bucketAreaCounts = bucketDefinitions.map<Record<FrizioneBlocco, number>>(() => ({
+    sposti: 0,
+    controlli: 0,
+    scrivi: 0,
+    decidi: 0,
+  }));
+  for (const result of evaluatedResults) {
+    const index = bucketDefinitions.findIndex((bucket) => result.score <= bucket.upper);
     bucketCounts[index >= 0 ? index : bucketCounts.length - 1] += 1;
+    bucketAreaCounts[index >= 0 ? index : bucketAreaCounts.length - 1][result.areaKey] += 1;
   }
   const scoreDistribution = bucketDefinitions.map((bucket, index) => {
     const count = bucketCounts[index];
-    const bucketPercentage = percentage(count, allScores.length);
+    const bucketPercentage = percentage(count, evaluatedResults.length);
     return {
       range: bucket.range,
       count,
       percentage: bucketPercentage,
       displayValue: displayCountAndPercentage(count, bucketPercentage),
+      areas: Object.values(BLOCCHI)
+        .map((area) => ({
+          key: area.key,
+          label: PROFESSIONAL_AREA_LABELS[area.key],
+          color: area.colore,
+          count: bucketAreaCounts[index][area.key],
+        }))
+        .filter((area) => area.count > 0),
     };
   });
 
@@ -259,72 +269,30 @@ export function buildFacilitatorAnalytics(rows: FacilitatorRow[]): FacilitatorAn
     percentage: percentage(count, participantsWithAnswers),
   })).sort((a, b) => b.count - a.count || a.activity.localeCompare(b.activity, "it"));
 
+  const totalAreaSignals = Object.values(areaStats).reduce((total, stats) => total + stats.yesCount, 0);
   const areas = Object.values(BLOCCHI).map((area) => {
     const stats = areaStats[area.key];
     return {
       key: area.key,
-      label: area.label,
+      label: PROFESSIONAL_AREA_LABELS[area.key],
       color: area.colore,
       yesCount: stats.yesCount,
+      percentage: percentage(stats.yesCount, totalAreaSignals),
       averageImpact: stats.ratingCount > 0 ? roundOne(stats.impactSum / stats.ratingCount) : 0,
       ratingCount: stats.ratingCount,
     };
   });
 
-  const useCaseFields: UseCaseFieldDatum[] = [];
-  for (const field of BLOCK2_FIELDS) {
-    if ((field.type !== "radio" && field.type !== "checkbox") || !field.options?.length) continue;
-
-    const counts = new Map(field.options.map((option) => [option.value, 0]));
-    let responseCount = 0;
-
-    for (const { submission } of rows) {
-      const value = submission.block2?.values?.[field.id];
-      if (field.type === "checkbox") {
-        if (!Array.isArray(value) || value.length === 0) continue;
-        const selected = new Set(value.filter((item) => counts.has(item)));
-        if (selected.size === 0) continue;
-        responseCount += 1;
-        selected.forEach((item) => counts.set(item, (counts.get(item) ?? 0) + 1));
-      } else {
-        if (typeof value !== "string" || !counts.has(value)) continue;
-        responseCount += 1;
-        counts.set(value, (counts.get(value) ?? 0) + 1);
-      }
-    }
-
-    if (responseCount === 0) continue;
-    useCaseFields.push({
-      id: field.id,
-      label: field.label,
-      type: field.type,
-      responseCount,
-      options: field.options.map((option) => {
-        const count = counts.get(option.value) ?? 0;
-        const optionPercentage = percentage(count, responseCount);
-        return {
-          value: option.value,
-          label: option.label,
-          chartLabel: shortLabel(option.label, 32),
-          count,
-          percentage: optionPercentage,
-          displayValue: displayCountAndPercentage(count, optionPercentage),
-        };
-      }),
-    });
-  }
-
   return {
     bestScores,
     participantsWithoutScore: Math.max(0, rows.length - bestScores.length),
     scoreDistribution,
-    evaluatedCandidates: allScores.length,
+    evaluatedCandidates: evaluatedResults.length,
     questionSelections,
     questionImpacts,
     activities,
     participantsWithAnswers,
     areas,
     scatterPoints,
-    useCaseFields,
   };
 }
