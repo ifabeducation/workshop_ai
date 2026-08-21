@@ -179,6 +179,7 @@ export default function Step1Frizione({
           const isSi = answer?.risposta === "si";
           const isNo = answer?.risposta === "no";
           const isSpia = domanda.id === DOMANDA_CRITERI_TACITI;
+          const impattoValue = answer?.impatto ?? IMPATTO_DEFAULT;
 
           return (
             <section
@@ -241,17 +242,34 @@ export default function Step1Frizione({
                     autoComplete="off"
                   />
 
-                  <p className="text-xs font-medium text-ifab-text">{IMPATTO_LABEL}</p>
-                  <p className="mt-0.5 text-xs text-ifab-text-muted">{IMPATTO_SOTTOTESTO}</p>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-medium text-ifab-text">{IMPATTO_LABEL}</p>
+                      <p className="mt-0.5 text-xs text-ifab-text-muted">{IMPATTO_SOTTOTESTO}</p>
+                    </div>
+                    <output
+                      htmlFor={`impatto-${domanda.id}`}
+                      className="rounded-lg bg-ifab-blue/10 px-3 py-1.5 text-sm font-semibold tabular-nums text-ifab-blue"
+                      aria-live="polite"
+                    >
+                      {impattoValue.toLocaleString("it-IT", {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      / 10
+                    </output>
+                  </div>
 
                   <div className="mt-3">
                     <input
+                      id={`impatto-${domanda.id}`}
                       type="range"
+                      aria-label={`${IMPATTO_LABEL}: ${domanda.testo}`}
                       min={0}
                       max={10}
                       step={0.1}
                       disabled={locked}
-                      value={answer?.impatto ?? IMPATTO_DEFAULT}
+                      value={impattoValue}
                       onChange={(e) => setRisposta(domanda.id, { impatto: Number(e.target.value) })}
                       className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-ifab-blue/30 accent-ifab-blue"
                     />
