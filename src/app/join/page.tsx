@@ -9,7 +9,7 @@ import {
   readStoredIdentity,
   saveStoredIdentity,
 } from "@/lib/participantStorage";
-import { TEST_PARTICIPANT_NAME } from "@/lib/testData";
+import { getRandomParticipantName, TEST_PARTICIPANT_NAME } from "@/lib/testData";
 import { RotateCcw, Users } from "lucide-react";
 import TestFillButton from "@/components/TestFillButton";
 
@@ -34,7 +34,7 @@ function JoinForm() {
    * browser (come partecipante o come facilitatore), altrimenti resta da digitare.
    */
   function fillTestData() {
-    setName(TEST_PARTICIPANT_NAME);
+    setName(getRandomParticipantName());
     setCode((prev) => prev || readStoredIdentity()?.code || readFacilitatorCode() || "");
   }
 

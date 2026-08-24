@@ -18,7 +18,7 @@ import {
 } from "@/lib/types";
 import { submitBlock2 } from "@/lib/clientApi";
 import { nowMs } from "@/lib/time";
-import { TEST_CLOSED_GROUPS, TEST_USE_CASE_VALUES } from "@/lib/testData";
+import { TEST_CLOSED_GROUPS, getRandomTestUseCase } from "@/lib/testData";
 import { downloadUseCasePdf } from "@/lib/useCasePdf";
 import UseCaseInterview, { InterviewTurn } from "./UseCaseInterview";
 
@@ -130,14 +130,15 @@ export default function UseCaseStep({
 
   useImperativeHandle(ref, () => ({
     fillWithTestData: () => {
+      const testValues = getRandomTestUseCase();
       dirtyRef.current = true;
       setDraftState("idle");
-      setValues((prev) => ({ ...prev, ...TEST_USE_CASE_VALUES }));
+      setValues((prev) => ({ ...prev, ...testValues }));
       setClosedGroups(TEST_CLOSED_GROUPS);
       setAskedQuestion(undefined);
       setPhase("scheda");
       void submitBlock2(code, participantId, {
-        values: TEST_USE_CASE_VALUES,
+        values: testValues,
         closedGroups: TEST_CLOSED_GROUPS,
         interviewDone: true,
         updatedAt: nowMs(),
