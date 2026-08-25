@@ -1,11 +1,12 @@
 "use client";
 
 import { Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, FileDown, HelpCircle, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileDown, HelpCircle, Save, Target } from "lucide-react";
 import {
   BLOCK2_SECTIONS,
   Block2Field,
   Block2Section,
+  block2ValueLabel,
   isBlock2ValueFilled,
 } from "@/config/block2Form";
 import { calcolaEsiti, candidateAttive } from "@/lib/frizioneScoring";
@@ -15,6 +16,7 @@ import {
   ChatMessage,
   Step1Submission,
   Step2Submission,
+  Step3Choice,
 } from "@/lib/types";
 import { submitBlock2 } from "@/lib/clientApi";
 import { nowMs } from "@/lib/time";
@@ -28,14 +30,6 @@ const TOTAL_FIELDS = BLOCK2_SECTIONS.reduce((n, s) => n + s.fields.length, 0);
 export type UseCaseStepHandle = {
   fillWithTestData: () => void;
 };
-
-function asText(value: Block2FieldValue | undefined): string {
-  return typeof value === "string" ? value : "";
-}
-
-function asList(value: Block2FieldValue | undefined): string[] {
-  return Array.isArray(value) ? value : [];
-}
 
 /**
  * Step 4 — un unico step per il caso d'uso, in due fasi:
@@ -52,6 +46,7 @@ export default function UseCaseStep({
   participantName,
   step1,
   step2,
+  step3,
   block2,
   onSaved,
   ref,
@@ -61,6 +56,7 @@ export default function UseCaseStep({
   participantName: string;
   step1?: Step1Submission;
   step2?: Step2Submission;
+  step3?: Step3Choice;
   block2?: Block2Submission;
   onSaved: (data: Block2Submission) => void;
   ref?: Ref<UseCaseStepHandle>;
@@ -85,11 +81,15 @@ export default function UseCaseStep({
   const pendingRef = useRef<Record<string, Block2FieldValue> | null>(null);
   const onSavedRef = useRef(onSaved);
 
-  // Contesto per l'agente: la candidata migliore del Blocco 1 (o, se l'esito
-  // non è ancora calcolabile, le candidate in gioco).
+  // Contesto per l'agente: l'azione che il partecipante ha scelto nello Step 3
+  // (non necessariamente quella a punteggio più alto). Finché la scelta non
+  // c'è ancora si torna al vecchio comportamento come rete di sicurezza.
   const esiti = calcolaEsiti(step1, step2);
+  const azioneSelezionata = step3?.chosenNome;
   const processoContext =
-    esiti[0]?.nome ?? candidateAttive(step1, step2).map((c) => c.nome).join(", ");
+    azioneSelezionata ??
+    esiti[0]?.nome ??
+    candidateAttive(step1, step2).map((c) => c.nome).join(", ");
   const compiled = BLOCK2_SECTIONS.flatMap((s) => s.fields).filter((f) =>
     isBlock2ValueFilled(values[f.id])
   ).length;
@@ -146,17 +146,6 @@ export default function UseCaseStep({
     },
   }));
 
-  function setValue(id: string, value: Block2FieldValue) {
-    dirtyRef.current = true;
-    setDraftState("idle");
-    setValues((prev) => ({ ...prev, [id]: value }));
-  }
-
-  function toggleInList(id: string, option: string) {
-    const current = asList(values[id]);
-    setValue(id, current.includes(option) ? current.filter((v) => v !== option) : [...current, option]);
-  }
-
   /** Un turno di intervista: i campi ricavati entrano nella scheda e si salvano. */
   async function handleTurn(turn: InterviewTurn) {
     const merged = { ...values, ...turn.fields };
@@ -179,7 +168,11 @@ export default function UseCaseStep({
     }
   }
 
-  /** Fine dell'intervista (o passaggio manuale): si apre la scheda da confermare. */
+  /**
+   * Fine dell'intervista: si apre la scheda da confermare. Ci si arriva solo
+   * quando l'agente considera l'intervista completa (vedi UseCaseInterview):
+   * il partecipante non ha un modo per saltarla e compilare la scheda a mano.
+   */
   async function openScheda() {
     setAskedQuestion(undefined);
     setPhase("scheda");
@@ -219,7 +212,7 @@ export default function UseCaseStep({
   async function handleExportPdf() {
     setExporting(true);
     try {
-      await downloadUseCasePdf({ participantName, code, values, now: nowMs() });
+      await downloadUseCasePdf({ participantName, code, values, step3, now: nowMs() });
     } finally {
       setExporting(false);
     }
@@ -231,96 +224,56 @@ export default function UseCaseStep({
     );
   }
 
-  function renderField(field: Block2Field) {
-    if (field.type === "textarea") {
-      return (
-        <textarea
-          value={asText(values[field.id])}
-          onChange={(e) => setValue(field.id, e.target.value)}
-          rows={field.rows ?? 4}
-          placeholder={field.placeholder}
-          className="w-full rounded-lg border border-ifab-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ifab-blue"
-        />
-      );
-    }
-
-    if (field.type === "text") {
-      return (
-        <input
-          value={asText(values[field.id])}
-          onChange={(e) => setValue(field.id, e.target.value)}
-          placeholder={field.placeholder}
-          className="w-full rounded-lg border border-ifab-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ifab-blue"
-          autoComplete="off"
-        />
-      );
-    }
-
-    if (field.type === "radio") {
-      const selected = asText(values[field.id]);
-      return (
-        <div className="flex flex-wrap gap-2">
-          {(field.options ?? []).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setValue(field.id, selected === opt.value ? "" : opt.value)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                selected === opt.value
-                  ? "border-ifab-blue bg-ifab-blue text-white"
-                  : "border-ifab-border bg-ifab-bg-soft text-ifab-text hover:border-ifab-blue"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      );
-    }
-
-    const selectedList = asList(values[field.id]);
+  /**
+   * La scheda è sola lettura: i valori li ricava l'agente dalla conversazione,
+   * il partecipante non compila mai un campo a mano. Per correggere qualcosa
+   * si torna a parlarne con l'assistente (vedi "Chiedi all'assistente").
+   */
+  function renderFieldValue(field: Block2Field) {
+    const value = values[field.id];
+    const label = block2ValueLabel(field, value);
     return (
-      <div className="flex flex-wrap gap-2">
-        {(field.options ?? []).map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => toggleInList(field.id, opt.value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-              selectedList.includes(opt.value)
-                ? "border-ifab-blue bg-ifab-blue text-white"
-                : "border-ifab-border bg-ifab-bg-soft text-ifab-text hover:border-ifab-blue"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      <p className="whitespace-pre-wrap rounded-lg border border-ifab-border bg-ifab-bg-soft px-3 py-2 text-sm text-ifab-text">
+        {isBlock2ValueFilled(value) ? label : <span className="text-ifab-text-muted">— non ancora raccolto</span>}
+      </p>
     );
   }
 
+  const azioneBanner = azioneSelezionata && (
+    <div className="flex items-center gap-2 rounded-xl border border-ifab-blue/30 bg-ifab-blue/5 px-4 py-2.5 text-sm text-ifab-navy">
+      <Target size={15} className="shrink-0 text-ifab-blue" />
+      <span>
+        Azione selezionata: <strong>{azioneSelezionata}</strong>
+      </span>
+    </div>
+  );
+
   if (phase === "intervista") {
     return (
-      <UseCaseInterview
-        processoContext={processoContext}
-        values={values}
-        closedGroups={closedGroups}
-        chatLog={chatLog}
-        initialInput={askedQuestion}
-        onTurn={handleTurn}
-        onDone={openScheda}
-        onOpenScheda={openScheda}
-      />
+      <div className="flex flex-col gap-4">
+        {azioneBanner}
+        <UseCaseInterview
+          processoContext={processoContext}
+          values={values}
+          closedGroups={closedGroups}
+          chatLog={chatLog}
+          initialInput={askedQuestion}
+          onTurn={handleTurn}
+          onDone={openScheda}
+        />
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-5">
+      {azioneBanner}
       <div>
         <h2 className="mb-1 text-lg font-semibold text-ifab-navy">Step 4 · Scheda Use Case</h2>
         <p className="text-sm text-ifab-text-muted">
-          Queste sono le informazioni che ho raccolto dalla conversazione, organizzate nei campi della scheda.
-          Controllale: puoi correggere qualsiasi campo qui, oppure tornare a parlarne con l&apos;assistente.
+          Queste sono le informazioni che l&apos;assistente ha raccolto dalla conversazione, organizzate nei
+          campi della scheda. Per correggere o aggiungere qualcosa, torna a parlarne: la scheda si aggiorna da
+          sola, non si scrive a mano.
         </p>
         <p className="mt-2 text-xs text-ifab-text-muted">
           Campi compilati: {compiled}/{TOTAL_FIELDS}
@@ -336,7 +289,7 @@ export default function UseCaseStep({
           <ArrowLeft size={14} /> Torna alla conversazione
         </button>
         <span className="text-xs text-ifab-text-muted">
-          Serve per aggiungere o cambiare qualcosa raccontandolo, invece di scriverlo campo per campo.
+          Serve per aggiungere o cambiare qualcosa raccontandolo: i campi non si scrivono qui a mano.
         </span>
       </div>
 
@@ -360,7 +313,7 @@ export default function UseCaseStep({
               <div key={field.id}>
                 <label className="mb-1 block text-xs font-medium text-ifab-text-muted">{field.label}</label>
                 {field.hint && <p className="mb-1.5 text-xs text-ifab-text-muted/80">{field.hint}</p>}
-                {renderField(field)}
+                {renderFieldValue(field)}
               </div>
             ))}
           </div>

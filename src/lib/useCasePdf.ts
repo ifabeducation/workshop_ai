@@ -10,7 +10,7 @@ import {
   block2ValueLabel,
   isBlock2ValueFilled,
 } from "@/config/block2Form";
-import { Block2FieldValue } from "./types";
+import { Block2FieldValue, Step3Choice } from "./types";
 
 const MARGIN = 48;
 const LINE = 14;
@@ -19,6 +19,8 @@ export type UseCasePdfInput = {
   participantName: string;
   code: string;
   values: Record<string, Block2FieldValue>;
+  /** Esito e scelta dello Step 3: raccomandazione del sistema vs decisione presa. */
+  step3?: Step3Choice;
   /** Momento dell'esportazione, in millisecondi. */
   now: number;
 };
@@ -32,6 +34,7 @@ export async function downloadUseCasePdf({
   participantName,
   code,
   values,
+  step3,
   now,
 }: UseCasePdfInput): Promise<void> {
   const { default: jsPDF } = await import("jspdf");
@@ -73,6 +76,27 @@ export async function downloadUseCasePdf({
     })}`,
     { size: 9, style: "normal", gap: 10 }
   );
+
+  if (step3?.chosenNome) {
+    pdf.setDrawColor(200);
+    pdf.line(MARGIN, y - 6, pageWidth - MARGIN, y - 6);
+    write("Step 3 · Esito e scelta", { size: 12, style: "bold", gap: 2 });
+    write("Opzione con punteggio più alto (raccomandazione del sistema)", { size: 8.5, style: "bold" });
+    write(
+      step3.bestNome
+        ? `${step3.bestNome}${typeof step3.bestPunteggio === "number" ? ` — punteggio ${Math.round(step3.bestPunteggio)}` : ""}`
+        : "— non disponibile",
+      { size: 10, style: "normal", gap: 6 }
+    );
+    write("Scelta effettiva del partecipante", { size: 8.5, style: "bold" });
+    write(
+      `${step3.chosenNome}${typeof step3.chosenPunteggio === "number" ? ` — punteggio ${Math.round(step3.chosenPunteggio)}` : ""}${
+        step3.followedRecommendation === false ? " (diversa dalla raccomandazione del sistema)" : ""
+      }`,
+      { size: 10, style: "normal", gap: 6 }
+    );
+    y += 6;
+  }
 
   for (const section of BLOCK2_SECTIONS) {
     // Il titolo di sezione non deve restare orfano in fondo alla pagina.

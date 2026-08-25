@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { getOpenAI, CHAT_MODEL } from "@/lib/openaiClient";
+import { getOpenAI, CHAT_MODEL, REASONING_CHAT_MODEL } from "@/lib/openaiClient";
 import { buildStep1SystemPrompt, buildStep2SystemPrompt } from "@/config/block1Frizione";
 import {
   BLOCK2_FIELDS,
+  BLOCK2_INTERVIEW_GROUPS,
+  MIN_ATTEMPTS_BEFORE_GIVING_UP,
   buildUseCaseInterviewSystemPrompt,
   isBlock2ValueFilled,
+  isTrivialAnswer,
   remainingInterviewGroups,
   sanitizeClosedGroups,
   sanitizeInterviewFields,
@@ -14,10 +17,12 @@ import { Block2FieldValue } from "@/lib/types";
 type AgentContext = {
   /** Step 1 e 2: attività selezionate dal partecipante. */
   selectedActivityLabels?: string[];
-  /** Step 4: attività emersa dal Blocco 1, stato della scheda e dell'intervista. */
+  /** Step 4: azione scelta nello Step 3, stato della scheda e dell'intervista. */
   processoContext?: string;
   values?: Record<string, Block2FieldValue>;
   closedGroups?: string[];
+  /** Tentativi già fatti sull'argomento corrente, tenuti dal client turno per turno. */
+  currentGroupAttempts?: number;
 };
 
 /**
@@ -56,18 +61,21 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   const values = context.values ?? {};
   const closedBefore = sanitizeClosedGroups(context.closedGroups);
   const remaining = remainingInterviewGroups(closedBefore);
+  const currentGroupBefore = remaining[0];
+  const attemptsBefore = context.currentGroupAttempts ?? 0;
 
   const systemPrompt = buildUseCaseInterviewSystemPrompt({
     processoContext: context.processoContext ?? "",
     remainingGroups: remaining,
     compiledFieldIds: BLOCK2_FIELDS.filter((f) => isBlock2ValueFilled(values[f.id])).map((f) => f.id),
+    currentGroupAttempts: attemptsBefore,
   });
 
   const openai = getOpenAI();
   const response = await openai.chat.completions.create({
-    model: CHAT_MODEL,
+    model: REASONING_CHAT_MODEL,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
-    temperature: 0.5,
+    temperature: 0.3,
     response_format: { type: "json_object" },
   });
 
@@ -82,8 +90,29 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   }
 
   const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : raw;
-  const fields = sanitizeInterviewFields(parsed.fields);
-  const closedGroups = sanitizeClosedGroups(parsed.closed, closedBefore);
+  let fields = sanitizeInterviewFields(parsed.fields);
+  let closedGroups = sanitizeClosedGroups(parsed.closed, closedBefore);
+
+  // Rete di sicurezza: se il modello ha chiuso l'argomento su cui l'ultima
+  // risposta dell'utente era palesemente non informativa ("non lo so" e simili)
+  // e non sono ancora stati fatti abbastanza tentativi, non lasciamo passare la
+  // chiusura né i campi che ne deriverebbero — il prompt lo chiede già, questo
+  // è solo il paracadute per quando il modello non lo rispetta.
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  if (
+    currentGroupBefore &&
+    attemptsBefore < MIN_ATTEMPTS_BEFORE_GIVING_UP &&
+    isTrivialAnswer(lastUserMessage) &&
+    closedGroups.includes(currentGroupBefore.key) &&
+    !closedBefore.includes(currentGroupBefore.key)
+  ) {
+    closedGroups = closedGroups.filter((k) => k !== currentGroupBefore.key);
+    const groupFieldIds = new Set(
+      BLOCK2_INTERVIEW_GROUPS.find((g) => g.key === currentGroupBefore.key)?.fields ?? []
+    );
+    fields = Object.fromEntries(Object.entries(fields).filter(([id]) => !groupFieldIds.has(id)));
+  }
+
   const remainingAfter = remainingInterviewGroups(closedGroups);
 
   return NextResponse.json({

@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, LockOpen, LogOut, Users, Copy, FileDown, Trash2 } from "lucide-react";
 import {
@@ -18,8 +18,8 @@ import { calcolaEsiti } from "@/lib/frizioneScoring";
 import { buildFacilitatorAnalytics } from "@/lib/facilitatorAnalytics";
 import { nowMs } from "@/lib/time";
 import { downloadUseCasePdf } from "@/lib/useCasePdf";
+import { downloadDashboardExcel } from "@/lib/dashboardExport";
 import { Participant, Submission, UnlockedSteps, DEFAULT_UNLOCKED_STEPS } from "@/lib/types";
-import TestFillButton from "@/components/TestFillButton";
 import FacilitatorAnalyticsDashboard from "@/components/facilitator/FacilitatorAnalyticsDashboard";
 
 const POLL_MS = 4000;
@@ -49,7 +49,7 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
   const [copiato, setCopiato] = useState(false);
   // Partecipante di cui si sta generando il PDF della scheda Use Case.
   const [pdfFor, setPdfFor] = useState<string | null>(null);
-  const printRef = useRef<HTMLDivElement>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   useEffect(() => {
     facilitatorMe()
@@ -97,21 +97,6 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
     await unlockStep(code, step, next);
   }
 
-  /**
-   * Pulsante "test" della dashboard: qui non ci sono campi da compilare, ma per
-   * provare il tool serve una sessione con tutti gli step aperti (i dati di
-   * esempio li genera il pulsante "test" della pagina partecipante).
-   */
-  async function unlockAllSteps() {
-    const chiusi = STEP_ORDER.filter((s) => !unlockedSteps[s.key]);
-    setUnlockedSteps((prev) => {
-      const next = { ...prev };
-      for (const s of STEP_ORDER) next[s.key] = true;
-      return next;
-    });
-    for (const s of chiusi) await unlockStep(code, s.key, true);
-  }
-
   /** Scheda Use Case di un partecipante, in PDF, dai soli dati salvati. */
   async function handleUseCasePdf(participant: Participant, submission: Submission) {
     setPdfFor(participant.participantId);
@@ -120,6 +105,7 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
         participantName: participant.name,
         code,
         values: submission.block2?.values ?? {},
+        step3: submission.step3,
         now: nowMs(),
       });
     } finally {
@@ -157,21 +143,14 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
     }
   }
 
-  async function handleExportPdf() {
-    if (!printRef.current) return;
-    const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-      import("jspdf"),
-      import("html2canvas"),
-    ]);
-    const canvas = await html2canvas(printRef.current, { backgroundColor: "#ffffff", scale: 2 });
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const imgWidth = pageWidth - 48;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    pdf.text(`Workshop AI Adoption — Sessione ${code}`, 24, 28);
-    pdf.addImage(imgData, "PNG", 24, 40, imgWidth, imgHeight);
-    pdf.save(`workshop-ai-adoption-sessione-${code}.pdf`);
+  /** Esporta i dati realmente raccolti (non uno screenshot della pagina) in un file Excel. */
+  async function handleExportExcel() {
+    setExportingExcel(true);
+    try {
+      await downloadDashboardExcel(code, rows);
+    } finally {
+      setExportingExcel(false);
+    }
   }
 
   const analytics = useMemo(() => buildFacilitatorAnalytics(rows), [rows]);
@@ -187,11 +166,6 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
             <h1 className="text-lg font-semibold text-white">Workshop AI Adoption — Blocco 1</h1>
           </div>
           <div className="flex items-center gap-3">
-            <TestFillButton
-              onClick={() => void unlockAllSteps()}
-              tone="dark"
-              title="Sblocca tutti gli step per una prova (i dati di esempio si generano dalla pagina partecipante)"
-            />
             <button
               onClick={copyCodice}
               className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/20"
@@ -301,17 +275,19 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
           </div>
         </section>
 
-        <div ref={printRef} className="rounded-xl bg-white p-5">
+        <div className="rounded-xl bg-white p-5">
           <section className="mb-6">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-ifab-navy">
                 <Users size={16} /> Partecipanti ({participants.length})
               </h2>
               <button
-                onClick={handleExportPdf}
-                className="flex items-center gap-2 rounded-lg border border-ifab-navy px-3 py-1.5 text-xs font-semibold text-ifab-navy transition hover:bg-ifab-navy hover:text-white"
+                onClick={() => void handleExportExcel()}
+                disabled={exportingExcel}
+                title="Scarica i dati raccolti in un file Excel (.xlsx)"
+                className="flex items-center gap-2 rounded-lg border border-ifab-navy px-3 py-1.5 text-xs font-semibold text-ifab-navy transition hover:bg-ifab-navy hover:text-white disabled:opacity-50"
               >
-                <FileDown size={14} /> Esporta dashboard
+                <FileDown size={14} /> {exportingExcel ? "Preparo il file..." : "Esporta dashboard"}
               </button>
             </div>
             <div className="overflow-x-auto">
@@ -321,7 +297,8 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                     <th className="py-2 pr-4">Nome</th>
                     <th className="py-2 pr-4">Step 1</th>
                     <th className="py-2 pr-4">Step 2</th>
-                    <th className="py-2 pr-4">Candidata migliore</th>
+                    <th className="py-2 pr-4">Step 3 · Raccomandazione</th>
+                    <th className="py-2 pr-4">Step 3 · Scelta partecipante</th>
                     <th className="py-2 pr-4">Use Case</th>
                     <th className="py-2 pr-4">Scheda</th>
                   </tr>
@@ -375,6 +352,25 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                         <td className="py-2 pr-4 text-ifab-text-muted">
                           {migliore ? `${migliore.nome} (${Math.round(migliore.punteggio)})` : "—"}
                         </td>
+                        <td className="py-2 pr-4">
+                          {submission.step3?.chosenNome ? (
+                            <span className="flex items-center gap-1.5">
+                              {submission.step3.chosenNome}
+                              {typeof submission.step3.chosenPunteggio === "number" &&
+                                ` (${Math.round(submission.step3.chosenPunteggio)})`}
+                              {submission.step3.followedRecommendation === false && (
+                                <span
+                                  className="text-amber-600"
+                                  title="Ha scelto un'opzione diversa dalla raccomandazione del sistema"
+                                >
+                                  ⚠
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-ifab-text-muted">—</span>
+                          )}
+                        </td>
                         <td className="py-2 pr-4">{useCaseLabel}</td>
                         <td className="py-2 pr-4">
                           {useCaseFilled > 0 ? (
@@ -396,7 +392,7 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                   })}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-4 text-center text-ifab-text-muted">
+                      <td colSpan={7} className="py-4 text-center text-ifab-text-muted">
                         Nessun partecipante ancora connesso.
                       </td>
                     </tr>

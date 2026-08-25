@@ -1,6 +1,6 @@
 // Tipi condivisi per il modello dati del workshop.
 // Blocco 1 — Scheda di attrito, in 3 step:
-//   1. 21 domande sì/no; su ogni sì, impatto 1-10 (e nome dell'attività)
+//   1. domande sì/no; su ogni sì, impatto 1-10 (e nome dell'attività)
 //   2. per le 3 candidate a impatto più alto, una caratteristica 1-10
 //   3. esito calcolato: prontezza, punteggio, tecnologia, supervisione, matrice
 // Step 4 — Use Case: intervista con l'agente e scheda da confermare (Blocco 2).
@@ -56,7 +56,12 @@ export type Step1Answer = {
 
 export type Step1Submission = {
   risposte?: Record<string, Step1Answer>; // chiave: id domanda come stringa
-  /** Domanda 21: le eccezioni si gestiscono con criteri non documentati. */
+  /**
+   * Storico: proveniva dalla domanda "le eccezioni si gestiscono con criteri
+   * non documentati?", rimossa dal questionario attivo (vedi
+   * DOMANDA_CRITERI_TACITI in config/block1Frizione.ts). Il campo resta per le
+   * submission precedenti che lo contengono già.
+   */
   criteriTaciti?: boolean;
   chatLog?: ChatMessage[];
   updatedAt?: number; // ultimo salvataggio automatico della bozza
@@ -113,12 +118,37 @@ export type ParticipantProgress = {
   updatedAt: number;
 };
 
+/**
+ * Step 3 — scelta finale del partecipante. L'esito (impatto, prontezza,
+ * punteggio) resta calcolato da step1 + step2 (vedi lib/frizioneScoring.ts):
+ * qui si registra solo la decisione, separando esplicitamente la
+ * raccomandazione del sistema (la candidata a punteggio più alto) dalla
+ * scelta effettiva del partecipante, così le due cose non si confondono mai
+ * — né in dashboard né nell'export — anche quando divergono.
+ */
+export type Step3Choice = {
+  bestDomandaId?: number;
+  bestNome?: string;
+  bestPunteggio?: number;
+  chosenDomandaId?: number;
+  chosenNome?: string;
+  chosenPunteggio?: number;
+  /** true se la scelta coincide con la raccomandazione del sistema. */
+  followedRecommendation?: boolean;
+  /** true se il partecipante ha confermato di procedere con una scelta non ottimale. */
+  confirmedNonOptimal?: boolean;
+  updatedAt?: number;
+  completedAt?: number;
+};
+
 export type Submission = {
   participantId: string;
   step1?: Step1Submission;
   step2?: Step2Submission;
-  // Lo Step 3 non ha dati propri: l'esito è calcolato da step1 + step2
-  // (vedi lib/frizioneScoring.ts), così non può divergere da ciò che si vede.
+  // L'esito (impatto, prontezza, punteggio) è calcolato da step1 + step2
+  // (vedi lib/frizioneScoring.ts), così non può divergere da ciò che si vede;
+  // step3 conserva solo la decisione del partecipante (vedi Step3Choice).
+  step3?: Step3Choice;
   block2?: Block2Submission;
   progress?: ParticipantProgress;
 };

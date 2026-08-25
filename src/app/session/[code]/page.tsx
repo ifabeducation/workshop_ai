@@ -22,6 +22,7 @@ import {
   ParticipantTab,
   Step1Submission,
   Step2Submission,
+  Step3Choice,
   Submission,
   UnlockedSteps,
 } from "@/lib/types";
@@ -168,7 +169,7 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
     return <div className="flex min-h-screen items-center justify-center bg-ifab-bg text-sm text-ifab-text-muted">Caricamento...</div>;
   }
 
-  const { step1, step2, block2 } = submission;
+  const { step1, step2, step3, block2 } = submission;
 
   function updateSubmission(patch: Partial<Submission>) {
     setSubmission((prev) => ({ ...(prev as Submission), ...patch }));
@@ -336,7 +337,17 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
             }
           />
         )}
-        {tab === "3" && <Step3Esito participantName={identity.name} step1={step1} step2={step2} />}
+        {tab === "3" && (
+          <Step3Esito
+            code={code}
+            participantId={identity.participantId}
+            participantName={identity.name}
+            step1={step1}
+            step2={step2}
+            step3={step3}
+            onSaved={(data: Step3Choice) => updateSubmission({ step3: { ...step3, ...data } })}
+          />
+        )}
         {tab === "UC" &&
           (unlockedSteps.useCase ? (
             <UseCaseStep
@@ -346,6 +357,7 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
               participantName={identity.name}
               step1={step1}
               step2={step2}
+              step3={step3}
               block2={block2}
               onSaved={(data: Block2Submission) =>
                 updateSubmission({ block2: { ...block2, ...data, values: { ...block2?.values, ...data.values } } })

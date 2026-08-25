@@ -1,5 +1,5 @@
 // Configurazione del Blocco 1 — "Scheda di attrito"
-// Step 1: 21 domande sì/no con slider di impatto sui sì.
+// Step 1: domande sì/no con slider di impatto sui sì.
 // Step 2: una caratteristica per candidata, decisa dal blocco della domanda.
 // Step 3: esito calcolato (vedi lib/frizioneScoring.ts).
 // Tutto il contenuto testuale sta qui: domande, ancoraggi, tecnologie, messaggi.
@@ -38,7 +38,7 @@ export const DOMANDE: DomandaFrizione[] = [
   { id: 2, blocco: "sposti", testo: "Ricevi documenti dello stesso tipo con formati o layout diversi?", attivita: ["ricopiature", "inserimento dati", "classificazioni"] },
   { id: 3, blocco: "sposti", testo: "Assegni categorie o codici decidendo in pochi secondi?", attivita: ["classificazioni", "triage e smistamento"] },
   { id: 4, blocco: "sposti", testo: "Compili campi il cui valore è già scritto altrove?", attivita: ["inserimento dati", "ricopiature"] },
-  { id: 5, blocco: "controlli", testo: "Riguardi periodicamente gli stessi numeri per verificare che nulla sia cambiato?", attivita: ["controlli ricorrenti", "individuazione di anomalie"] },
+  { id: 5, blocco: "controlli", testo: "Riguardi periodicamente gli stessi numeri per verificare se qualcosa è cambiato?", attivita: ["controlli ricorrenti", "individuazione di anomalie"] },
   { id: 6, blocco: "controlli", testo: "Confronti due fonti diverse per controllare se coincidono?", attivita: ["riconciliazioni", "controlli ricorrenti"] },
   { id: 7, blocco: "controlli", testo: "Ti è capitato di accorgerti tardi di uno scostamento già visibile nei dati?", attivita: ["individuazione di anomalie", "previsioni"] },
   { id: 8, blocco: "controlli", testo: "Produci report con la stessa struttura a intervalli regolari?", attivita: ["reportistica ricorrente", "controlli ricorrenti"] },
@@ -46,21 +46,22 @@ export const DOMANDE: DomandaFrizione[] = [
   { id: 10, blocco: "controlli", testo: "Raggruppi clienti, pratiche o fornitori basandoti sull'esperienza più che su criteri scritti?", attivita: ["segmentazioni", "correlazioni", "classificazioni"] },
   { id: 11, blocco: "scrivi", testo: "Parti dalla versione precedente di un documento e ne cambi una parte?", attivita: ["offerte", "produzione testi", "verbali"] },
   { id: 12, blocco: "scrivi", testo: "Riscrivi lo stesso contenuto per destinatari o lingue diverse?", attivita: ["traduzioni", "produzione testi", "sintesi"] },
-  { id: 13, blocco: "scrivi", testo: "Esiste un template o un format di riferimento per quello che produci?", attivita: ["offerte", "verbali", "reportistica ricorrente", "produzione testi"] },
   { id: 14, blocco: "scrivi", testo: "Per scrivere vai a cercare informazioni in documenti interni esistenti?", attivita: ["offerte", "sintesi", "produzione testi"] },
   { id: 15, blocco: "scrivi", testo: "Prendi appunti in riunione o sopralluogo e li riscrivi dopo in forma ordinata?", attivita: ["verbali", "produzione testi"] },
   { id: 16, blocco: "scrivi", testo: "Leggi documenti lunghi per estrarne i punti utili a qualcun altro?", attivita: ["sintesi", "produzione testi"] },
   { id: 17, blocco: "decidi", testo: "Concedi autorizzazioni che non hai praticamente mai negato?", attivita: ["approvazioni con soglie prestabilite"] },
-  { id: 18, blocco: "decidi", testo: "Capisci a chi inoltrare una richiesta leggendo solo l'oggetto?", attivita: ["triage e smistamento", "classificazioni"] },
   { id: 19, blocco: "decidi", testo: "Verifichi la presenza di elementi obbligatori seguendo una lista?", attivita: ["controlli di conformità", "controlli ricorrenti"] },
-  { id: 20, blocco: "decidi", testo: "Applichi soglie o priorità che sapresti scrivere su un foglio?", attivita: ["attribuzioni di priorità", "approvazioni con soglie"] },
-  { id: 21, blocco: "decidi", testo: "Le eccezioni le gestisci con criteri non documentati?", attivita: ["attribuzioni di priorità", "controlli di conformità", "approvazioni con soglie"] },
+  { id: 20, blocco: "decidi", testo: "Applichi soglie o priorità secondo criteri espliciti?", attivita: ["attribuzioni di priorità", "approvazioni con soglie"] },
 ];
 
 /**
- * Domanda "spia": un sì è un segnale negativo. Non apre lo slider di impatto e
- * non concorre alla selezione delle candidate; alza soltanto il flag
- * criteriTaciti, che nello Step 3 declassa il livello di supervisione.
+ * Domanda "spia" storica (rimossa dal questionario attivo): un sì era un
+ * segnale negativo, non apriva lo slider di impatto e non concorreva alla
+ * selezione delle candidate, alzando soltanto il flag criteriTaciti. La
+ * costante resta per continuare a leggere correttamente le submission
+ * precedenti che contengono ancora una risposta a questo id: candidateOrdinate
+ * la esclude comunque dalle candidate, e Step3 mostra ancora la nota se il
+ * flag risulta true nei dati salvati.
  */
 export const DOMANDA_CRITERI_TACITI = 21;
 
@@ -185,7 +186,7 @@ function supportAgentRules() {
 export function buildStep1SystemPrompt(): string {
   const elenco = DOMANDE.map((d) => `${d.id}. ${d.testo}`).join("\n");
 
-  return `Sei un facilitatore esperto di adozione dell'AI. Un partecipante sta compilando una "scheda di attrito": 21 domande sì/no sulle frizioni del suo lavoro quotidiano. Per ogni sì indica anche quanto quell'attività pesa negativamente sul processo, da 1 a 10.
+  return `Sei un facilitatore esperto di adozione dell'AI. Un partecipante sta compilando una "scheda di attrito": ${DOMANDE.length} domande sì/no sulle frizioni del suo lavoro quotidiano. Per ogni sì indica anche quanto quell'attività pesa negativamente sul processo, da 1 a 10.
 
 **LE DOMANDE**
 ${elenco}

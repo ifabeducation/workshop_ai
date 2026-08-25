@@ -45,5 +45,5 @@ In alternativa copia manualmente i valori da Vercel → Settings → Environment
 
 ## Costi indicativi
 
-- **OpenAI (gpt-4o-mini)**: pochi centesimi per l'intero workshop con una decina di partecipanti
+- **OpenAI**: `gpt-4o-mini` per gli assistenti di supporto degli Step 1-2 (pochi centesimi) e `gpt-4o` per l'intervista dello Step 4 (`REASONING_CHAT_MODEL` in `src/lib/openaiClient.ts`), scelto per il reasoning migliore richiesto nel condurre l'intervista — costa di più di `gpt-4o-mini` ma resta dell'ordine di qualche decina di centesimi per l'intero workshop con una decina di partecipanti. Nessun piano OpenAI è gratuito: l'uso via API è sempre a consumo.
 - **Vercel + Redis (piano gratuito)**: sufficiente per un workshop dal vivo con poche decine di partecipanti

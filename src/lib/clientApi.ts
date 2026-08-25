@@ -111,6 +111,13 @@ export function submitStep2(code: string, participantId: string, data: import(".
   });
 }
 
+export function submitStep3(code: string, participantId: string, data: import("./types").Step3Choice) {
+  return jsonFetch<{ submission: Submission }>(`/api/session/${code}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ participantId, part: "step3", data }),
+  });
+}
+
 export function submitBlock2(
   code: string,
   participantId: string,
