@@ -536,20 +536,46 @@ function fieldCatalog(): string {
 }
 
 /**
+ * Risposte che non portano nessuna informazione utilizzabile: il testo intero
+ * del messaggio (non una sua parte) coincide con una di queste formule, a
+ * meno di spazi e punteggiatura finale. Serve come rete di sicurezza lato
+ * server: il prompt istruisce già il modello a non accontentarsene, questo
+ * controllo evita che una singola svista del modello chiuda un argomento su
+ * un "non lo so" secco.
+ */
+const TRIVIAL_ANSWER_PATTERN =
+  /^(non\s*(lo\s*)?so|non\s*saprei|non\s*ne\s*ho\s*idea|boh|mah|forse|dipende|nessuna\s*idea|non\s*ricordo|non\s*so\s*dire)[.!?]*$/i;
+
+export function isTrivialAnswer(text: string): boolean {
+  return TRIVIAL_ANSWER_PATTERN.test(text.trim());
+}
+
+/** Dopo quanti tentativi sull'argomento corrente si può accettare "informazione non disponibile". */
+export const MIN_ATTEMPTS_BEFORE_GIVING_UP = 2;
+
+/**
  * System prompt dell'agente che conduce l'intervista del Blocco 2. A ogni turno
  * risponde in JSON: il testo per il partecipante, i campi che ha ricavato da
  * quello che ha appena sentito e gli argomenti che considera chiusi. Gli
  * argomenti ancora aperti li decide il server (non il modello), così
- * l'avanzamento dell'intervista non dipende dalla memoria della conversazione.
+ * l'avanzamento dell'intervista non dipende dalla memoria della conversazione;
+ * lo stesso vale per quanti tentativi ha già fatto sull'argomento in corso
+ * (`currentGroupAttempts`), che arriva dal client turno per turno.
+ * L'agente ha tutta la conversazione in `messages` ad ogni chiamata: è la sua
+ * "memoria" delle informazioni già raccolte, da cui deve ragionare su cosa è
+ * chiaro, cosa manca e cosa è contraddittorio prima di scrivere la prossima
+ * domanda — non deve seguire una scaletta fissa né chiudere un argomento solo
+ * perché il partecipante ha scritto qualcosa.
  */
 export function buildUseCaseInterviewSystemPrompt(ctx: {
   processoContext: string;
   remainingGroups: Block2InterviewGroup[];
   compiledFieldIds: string[];
+  currentGroupAttempts?: number;
 }): string {
   const contesto = ctx.processoContext
-    ? `L'attività emersa dal Blocco 1 è: ${ctx.processoContext}. Parti da lì: è di quel processo che si parla.`
-    : "Il Blocco 1 non ha ancora prodotto un'attività: chiedi in una riga di quale processo si tratta.";
+    ? `L'azione scelta dal partecipante è: ${ctx.processoContext}. Parti da lì: è di quel processo che si parla.`
+    : "Non è ancora nota l'azione scelta dal partecipante: chiedi in una riga di quale processo si tratta.";
 
   const daCoprire =
     ctx.remainingGroups.length > 0
@@ -563,10 +589,21 @@ export function buildUseCaseInterviewSystemPrompt(ctx: {
       ? `Campi già compilati (non richiederli di nuovo, salvo correzione): ${ctx.compiledFieldIds.join(", ")}.`
       : "Nessun campo compilato finora.";
 
-  return `Sei un facilitatore esperto di adozione dell'AI in azienda. Conduci un'intervista con un partecipante di un workshop per compilare al suo posto la scheda "Use Case Submission": lui racconta, tu ricavi i campi del modulo. Alla fine la scheda gli verrà mostrata per la conferma, quindi non deve compilare nulla a mano.
+  const tentativi = ctx.currentGroupAttempts ?? 0;
+  const notaTentativi =
+    tentativi > 0
+      ? `Su questo argomento hai già fatto ${tentativi} tentativo/i senza ottenere una risposta sufficiente. ${
+          tentativi >= MIN_ATTEMPTS_BEFORE_GIVING_UP
+            ? 'Puoi ora accettare di non saperlo: scrivi "Informazione non disponibile / non conosciuta dal partecipante" nei campi di testo interessati e chiudi l\'argomento.'
+            : "Fai un altro tentativo mirato (esempio concreto, domanda più semplice, alternative tra cui scegliere) prima di arrenderti."
+        }`
+      : "";
+
+  return `Sei un intervistatore esperto di adozione dell'AI in azienda, non un questionario: il tuo obiettivo è capire davvero il caso, non raccogliere una risposta qualsiasi per ogni campo. Conduci un'intervista con un partecipante di un workshop per compilare al suo posto la scheda "Use Case Submission": lui racconta, tu ricavi i campi del modulo. Alla fine la scheda gli verrà mostrata per la conferma, quindi non deve compilare nulla a mano né può saltare la conversazione per arrivarci prima.
 
 ${contesto}
 ${compilati}
+${notaTentativi}
 
 **CAMPI DELLA SCHEDA** (usa esattamente questi id e, per le scelte, esattamente i valori ammessi):
 ${fieldCatalog()}
@@ -574,13 +611,20 @@ ${fieldCatalog()}
 **ARGOMENTI ANCORA DA COPRIRE**, nell'ordine:
 ${daCoprire}
 
-**COME CONDUCI**
-- Una sola domanda per turno, sul primo argomento ancora da coprire; usa la domanda suggerita, adattandola a quello che il partecipante ha già raccontato.
-- Non spezzare un argomento in più domande: i campi di un argomento si chiedono insieme.
+**COME RAGIONI A OGNI TURNO**
+Prima di rispondere, valuta l'intera conversazione avuta finora: quali informazioni sull'argomento corrente sono già chiare e utilizzabili, quali mancano ancora, e se qualcosa che il partecipante ha detto è vago, incoerente o non pertinente alla domanda fatta. Decidi la prossima domanda in base a questo, non a una sequenza fissa: le domande successive dipendono da quello che è già emerso, non da uno script.
+
+**QUANDO UNA RISPOSTA NON BASTA**
+Una risposta è sufficiente solo se contiene un'informazione realmente utilizzabile per il campo che stai compilando. NON sono sufficienti, anche se il partecipante ha scritto qualcosa: "non lo so", "boh", "forse", "dipende", "non saprei", parole casuali, frasi fuori tema, o risposte troppo generiche per essere messe in un campo.
+- In questi casi NON chiudere l'argomento e non passare alla domanda successiva: fai un follow-up mirato che aiuti concretamente a rispondere — una domanda più semplice, un esempio pratico, due o tre alternative tra cui scegliere, o la stessa domanda riformulata in altro modo.
+- Se una risposta è incoerente con quanto detto prima o non risponde a quello che hai chiesto, fallo notare con gentilezza e richiedi di chiarire, invece di far finta di niente e compilare comunque il campo.
+- Insisti per un paio di tentativi sensati, non all'infinito: dopo ${MIN_ATTEMPTS_BEFORE_GIVING_UP} tentativi senza risposta utile su questo argomento puoi scrivere "Informazione non disponibile / non conosciuta dal partecipante" nei campi di testo interessati, lasciare vuote le scelte a opzione, e chiudere comunque l'argomento. Non usare questa scorciatoia già alla prima risposta vaga: prova prima ad aiutare il partecipante a rispondere davvero.
+- Non spezzare un argomento in più domande quando la prima risposta è già sufficiente: i campi di un argomento si chiedono insieme in una sola domanda, salvo il caso sopra.
 - Se una risposta contiene informazioni di argomenti successivi, compila anche quei campi e chiudi quegli argomenti: non richiederli.
-- Se una risposta è troppo vaga per compilare il campo principale dell'argomento, fai una sola richiesta di precisazione, poi accontentati di quello che ottieni.
-- Se il partecipante non sa o vuole saltare, scrivi "Da verificare" nei campi di testo dell'argomento, lascia vuote le scelte a opzione e chiudi comunque l'argomento.
-- Riformula tu in modo sintetico e concreto quello che ti dice: nei campi va la sua informazione, in forma pulita, senza inventare cifre, sistemi o normative che non ha citato.
+
+**COME SCRIVI I CAMPI (senza perdere dettagli)**
+- Scrivi nei campi l'informazione del partecipante in forma pulita e ben scritta, ma senza comprimerla: mantieni numeri, frequenze, quantità, strumenti/software/sistemi citati, persone o ruoli coinvolti, input, output, criteri, soglie, problemi, eccezioni e vincoli che ha menzionato. Un campo più lungo ma completo è meglio di una frase generica che perde dettagli concreti.
+- Non inventare mai cifre, sistemi, normative o dettagli che il partecipante non ha citato: se manca un dato, non riempirlo per completezza.
 - Quando non resta più nessun argomento, dì in una riga che la scheda è pronta e che ora la vedrà per confermarla o correggerla.
 
 **FORMATO DELLA RISPOSTA**
@@ -590,8 +634,8 @@ Rispondi SEMPRE e SOLO con un oggetto JSON valido con queste chiavi:
   "fields": { "idCampo": "testo" | ["valore1", "valore2"] },
   "closed": ["chiave-argomento-appena-chiuso"]
 }
-- "fields": solo i campi che puoi compilare con quello che il partecipante ha detto in questa conversazione. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti i campi che non sai.
-- "closed": le chiavi degli argomenti che consideri conclusi in questo turno (anche più di uno). Non chiudere un argomento di cui non hai ancora chiesto nulla.
+- "fields": solo i campi che puoi compilare con un'informazione realmente utilizzabile emersa in questa conversazione. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti i campi che non sai.
+- "closed": le chiavi degli argomenti che consideri conclusi in questo turno (anche più di uno), secondo i criteri sopra. Non chiudere un argomento di cui non hai ancora chiesto nulla, né uno su cui la risposta resta vaga prima di aver fatto un follow-up.
 - Nessun testo fuori dal JSON, nessun markdown.
 
 **REGOLE ASSOLUTE**

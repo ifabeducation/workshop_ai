@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Send, Sparkles } from "lucide-react";
+import { Send, Sparkles } from "lucide-react";
 import {
   BLOCK2_INTERVIEW_GROUPS,
   BLOCK2_INTERVIEW_GROUP_COUNT,
@@ -22,8 +22,10 @@ export type InterviewTurn = {
  * racconta (scrivendo o a voce), l'agente ricava i campi del modulo: si parte
  * dalla domanda generica su com'è il processo oggi, poi l'agente chiede solo
  * quello che non ha ancora sentito, un argomento per volta (gli argomenti
- * raggruppano i campi che si possono raccogliere con una domanda sola).
- * Quando non resta più nulla da chiedere si passa alla scheda da confermare.
+ * raggruppano i campi che si possono raccogliere con una domanda sola), senza
+ * accontentarsi di risposte vaghe o non pertinenti. Quando l'agente ritiene di
+ * avere abbastanza informazioni si passa da sola alla scheda da confermare:
+ * non c'è un modo per saltare la conversazione e compilarla a mano.
  */
 export default function UseCaseInterview({
   processoContext,
@@ -33,7 +35,6 @@ export default function UseCaseInterview({
   initialInput,
   onTurn,
   onDone,
-  onOpenScheda,
 }: {
   processoContext: string;
   values: Record<string, Block2FieldValue>;
@@ -43,7 +44,6 @@ export default function UseCaseInterview({
   initialInput?: string;
   onTurn: (turn: InterviewTurn) => void;
   onDone: () => void;
-  onOpenScheda: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(
     chatLog.length > 0 ? chatLog : [{ role: "assistant", content: INITIAL_MESSAGE_USE_CASE_INTERVIEW }]
@@ -56,6 +56,12 @@ export default function UseCaseInterview({
   // (che si aggiorna un attimo dopo).
   const [closed, setClosed] = useState<string[]>(closedGroups);
   const valuesRef = useRef<Record<string, Block2FieldValue>>(values);
+  // Quanti turni sono già stati spesi sull'argomento corrente senza chiuderlo:
+  // serve al server per non accettare "non lo so" già al primo tentativo, ma
+  // anche per non insistere all'infinito (vedi block2Form.ts). Vive qui, non
+  // nel payload salvato: è un contatore di conversazione, non un dato del
+  // workshop.
+  const attemptsRef = useRef<Record<string, number>>({});
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -88,6 +94,7 @@ export default function UseCaseInterview({
 
     dictation.stop();
     const nextMessages: ChatMessage[] = [...messages, { role: "user", content: testo }];
+    const groupBefore = corrente?.key;
     setMessages(nextMessages);
     setInput("");
     setLoading(true);
@@ -100,7 +107,12 @@ export default function UseCaseInterview({
         body: JSON.stringify({
           subsection: "useCaseInterview",
           messages: nextMessages,
-          context: { processoContext, values: valuesRef.current, closedGroups: closed },
+          context: {
+            processoContext,
+            values: valuesRef.current,
+            closedGroups: closed,
+            currentGroupAttempts: groupBefore ? (attemptsRef.current[groupBefore] ?? 0) : 0,
+          },
         }),
       });
       const data = await res.json();
@@ -113,6 +125,14 @@ export default function UseCaseInterview({
       const reply: string = data.reply ?? "";
       const fields: Record<string, Block2FieldValue> = data.fields ?? {};
       const nuoviChiusi: string[] = Array.isArray(data.closedGroups) ? data.closedGroups : closed;
+
+      // L'argomento è ancora lo stesso di prima dell'invio: è un altro
+      // tentativo, non il primo. Se invece si è chiuso o se ne è aperto un
+      // altro, il conteggio riparte da zero.
+      if (groupBefore) {
+        const stessoArgomento = remainingInterviewGroups(nuoviChiusi)[0]?.key === groupBefore;
+        attemptsRef.current[groupBefore] = stessoArgomento ? (attemptsRef.current[groupBefore] ?? 0) + 1 : 0;
+      }
 
       const finalMessages: ChatMessage[] = [...nextMessages, { role: "assistant", content: reply }];
       setMessages(finalMessages);
@@ -243,18 +263,10 @@ export default function UseCaseInterview({
         </form>
       </section>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={onOpenScheda}
-          className="flex items-center gap-2 rounded-lg border border-ifab-navy px-4 py-2 text-sm font-semibold text-ifab-navy transition hover:bg-ifab-navy hover:text-white"
-        >
-          Vai alla scheda <ArrowRight size={15} />
-        </button>
-        <span className="text-xs text-ifab-text-muted">
-          Puoi passare alla scheda quando vuoi: quello che manca lo completi a mano, o torni qui a parlarne.
-        </span>
-      </div>
+      <p className="text-xs text-ifab-text-muted">
+        La scheda si apre da sola quando l&apos;assistente ha raccolto abbastanza informazioni: niente da
+        saltare, niente da compilare a mano.
+      </p>
     </div>
   );
 }

@@ -6,10 +6,10 @@ App interattiva per condurre dal vivo il workshop di AI Adoption. Il facilitator
 
 Gli Step 1-3 sono il Blocco 1 (scheda di attrito); lo Step 4 raccoglie il caso d'uso e sostituisce il vecchio Blocco 2.
 
-- **Step 1 — Scheda di attrito**: 21 domande sì/no in elenco unico (i quattro blocchi restano interni). Su ogni sì si apre un nome facoltativo per l'attività e lo **slider Impatto 1-10**, senza valore preimpostato: va mosso. Tornando al no, i campi si chiudono e il dato viene scartato. Contatore risposte in alto, avviso non bloccante oltre 8 sì, messaggio dedicato se non c'è nessun sì. La **domanda 21** (eccezioni gestite con criteri non documentati) è una spia: non apre lo slider, non concorre alle candidate, alza solo il flag `criteriTaciti`.
+- **Step 1 — Scheda di attrito**: domande sì/no in elenco unico (i quattro blocchi restano interni). Su ogni sì si apre un nome facoltativo per l'attività e lo **slider Impatto 1-10**, senza valore preimpostato: va mosso. Tornando al no, i campi si chiudono e il dato viene scartato. Contatore risposte in alto, avviso non bloccante oltre 8 sì, messaggio dedicato se non c'è nessun sì.
 - **Step 2 — Caratteristiche delle tre candidate**: le tre attività con impatto più alto (a parità vince quella dichiarata prima), una scheda alla volta con navigazione avanti/indietro. Un solo slider per scheda, deciso dal blocco della domanda di origine (costanza del formato · disponibilità dei dati · template e fonti · esplicitezza dei criteri). Nessun punteggio o anteprima; concludendo lo step le risposte si bloccano e le candidate vengono congelate.
-- **Step 3 — Esito**: **matrice Impatto × Prontezza in SVG inline** con i quattro quadranti nominati e le candidate posizionate, poi una scheda per candidata in ordine di punteggio con la riga di motivazione che spiega la posizione. Export PDF.
-- **Step 4 — Use Case**: un unico step per il caso d'uso. Non c'è un modulo da compilare: l'agente conduce un'intervista che parte dalla domanda generica su com'è oggi il processo e qual è il problema, e da quello che il partecipante racconta ricava i campi della scheda. Alla fine la scheda compare precompilata, da confermare o correggere, con export PDF. Vedi [Step 4 — Use Case: intervista e scheda](#step-4--use-case-intervista-e-scheda).
+- **Step 3 — Esito e scelta**: **matrice Impatto × Prontezza in SVG inline** con i quattro quadranti nominati e le candidate posizionate, poi una scheda per candidata in ordine di punteggio con la riga di motivazione che spiega la posizione. Il sistema evidenzia la candidata a punteggio più alto, ma la decisione è del partecipante: scegliendo un'altra candidata compare una conferma esplicita ("la scelta non corrisponde all'opzione con il valore più alto: vuoi procedere comunque?"). Raccomandazione e scelta si salvano separate (`Step3Choice`, in `src/lib/types.ts`) e sono entrambe visibili in dashboard e nell'export Excel. Export PDF.
+- **Step 4 — Use Case**: un unico step per il caso d'uso, sull'azione scelta nello Step 3. Non c'è un modulo da compilare a mano: l'agente conduce un'intervista che parte dalla domanda generica su com'è oggi il processo e qual è il problema, fa i follow-up necessari quando una risposta è vaga o insufficiente, e da quello che il partecipante racconta ricava i campi della scheda. La scheda si apre da sola, in sola lettura, solo quando l'agente considera l'intervista completa — non prima, e non a mano. Vedi [Step 4 — Use Case: intervista e scheda](#step-4--use-case-intervista-e-scheda).
 
 Calcolo (in `src/lib/frizioneScoring.ts`, unico punto di verità, usato anche dalla dashboard):
 
@@ -18,7 +18,7 @@ prontezza = blocco "sposti" ? max(0, 10 - |valore - 5.5| × 2) : valore   // cam
 punteggio = impatto × prontezza                                          // prodotto, non somma: 0-100
 ```
 
-I casi limite si valutano in ordine e cambiano la lettura della posizione (non il punteggio): formato costante (≤2 su "sposti"), formato sempre diverso (≥9), valore ≤3 sugli altri blocchi. I due estremi di "sposti" ricevono lo stesso punteggio per effetto della campana ma **messaggi opposti**. Se `criteriTaciti` è vero compare la nota esplicita sulla formalizzazione dei criteri.
+I casi limite si valutano in ordine e cambiano la lettura della posizione (non il punteggio): formato costante (≤2 su "sposti"), formato sempre diverso (≥9), valore ≤3 sugli altri blocchi. I due estremi di "sposti" ricevono lo stesso punteggio per effetto della campana ma **messaggi opposti**. Se `criteriTaciti` è vero compare la nota esplicita sulla formalizzazione dei criteri: il flag veniva dalla domanda spia "le eccezioni si gestiscono con criteri non documentati?", rimossa dal questionario attivo — resta solo per leggere correttamente le sessioni precedenti che l'avevano già registrato.
 
 Domande, ancoraggi, tecnologie e messaggi vivono in `src/config/block1Frizione.ts`.
 
@@ -26,22 +26,23 @@ Il facilitatore sblocca ogni step dalla propria dashboard; i partecipanti vedono
 
 ## Step 4 — Use Case: intervista e scheda
 
-Lo Step 4 e la scheda Use Case sono **un unico step**: la scheda (che ricalca il template `Workshop1_Template_Use_Case_Submission_1_page.docx`) non si compila a mano campo per campo, si compila conversando. Il facilitatore sblocca lo step quando il gruppo è pronto.
+Lo Step 4 e la scheda Use Case sono **un unico step**: la scheda (che ricalca il template `Workshop1_Template_Use_Case_Submission_1_page.docx`) non si compila mai a mano campo per campo, si compila conversando. Il facilitatore sblocca lo step quando il gruppo è pronto. In testa allo step compare l'**azione selezionata**: quella scelta dal partecipante nello Step 3, anche quando è diversa dall'opzione con il punteggio più alto.
 
-**Fase 1 — intervista.** L'agente parte dalla domanda generica dello Step 4 (com'è oggi il processo, chi è coinvolto, dove si inceppa, cosa costa) e da lì chiede solo quello che non ha ancora sentito. Le domande sono raggruppate per **argomento**: un argomento raccoglie tutti i campi che si possono ottenere con una domanda sola, così bastano ~11 domande per 28 campi. Una barra in alto mostra gli argomenti coperti.
+**Fase 1 — intervista.** L'agente parte dalla domanda generica dello Step 4 (com'è oggi il processo, chi è coinvolto, dove si inceppa, cosa costa) e da lì chiede solo quello che non ha ancora sentito, comportandosi da intervistatore e non da questionario: usa il modello OpenAI con il miglior reasoning disponibile nell'integrazione (`REASONING_CHAT_MODEL` in `src/lib/openaiClient.ts`), fa follow-up mirati quando una risposta è vaga, fuori tema o del tipo "non lo so", e non chiude un argomento finché non ha un'informazione davvero utilizzabile (o, dopo un paio di tentativi sensati, un esplicito "informazione non disponibile"). Le domande sono raggruppate per **argomento**: un argomento raccoglie tutti i campi che si possono ottenere con una domanda sola, così bastano ~11 domande per 28 campi. Una barra in alto mostra gli argomenti coperti.
 
 - A ogni turno l'agente risponde in **JSON**: il messaggio per il partecipante, i campi che ha ricavato e gli argomenti che considera chiusi. I campi passano da `sanitizeInterviewFields` (id inesistenti, valori vuoti e opzioni non previste vengono scartati): nella scheda non può finire un valore che il form non sa mostrare.
-- **Gli argomenti ancora aperti li decide il server**, dai `closedGroups` accumulati nella submission, non il modello: l'avanzamento (e quindi il passaggio alla scheda) non dipende da quanto il modello ricorda della conversazione. Se il partecipante non sa rispondere, l'argomento si chiude comunque con "Da verificare" nei campi di testo.
+- **Gli argomenti ancora aperti li decide il server**, dai `closedGroups` accumulati nella submission, non il modello: l'avanzamento (e quindi il passaggio alla scheda) non dipende da quanto il modello ricorda della conversazione. Il client tiene anche il conteggio dei tentativi già fatti sull'argomento corrente (`currentGroupAttempts`); il server usa lo stesso conteggio come rete di sicurezza per non lasciar chiudere un argomento su una risposta palesemente vuota ("non lo so" e simili, vedi `isTrivialAnswer` in `src/config/block2Form.ts`) prima che siano stati fatti almeno un paio di tentativi.
 - Se una risposta contiene informazioni di argomenti successivi, l'agente compila anche quei campi e non li richiede.
+- I campi si scrivono mantenendo i dettagli concreti della risposta (numeri, strumenti, ruoli, soglie, eccezioni...), non riassunti generici: vedi le istruzioni in `buildUseCaseInterviewSystemPrompt`.
 - Argomenti, domande suggerite, catalogo dei campi e prompt vivono in `src/config/block2Form.ts`: modificare lì testi, opzioni o raggruppamenti aggiorna form, intervista e conteggi, senza toccare componenti o API.
 
-**Fase 2 — scheda da confermare.** Finita l'intervista (o in qualsiasi momento, con "Vai alla scheda") si apre la scheda con la stessa struttura del template — 1.0 Problema/opportunità di business · 1.1 Soluzione proposta · 1.2 Obiettivi strategici · 1.3 Dati e contesto · 1.4 Impatto atteso · 1.5 Metriche di successo · 1.6 Valutazione etica preliminare · 1.7 Rischi, complessità e resistenze — con le informazioni raccolte già organizzate nei campi.
+**Fase 2 — scheda da confermare.** Solo quando l'agente ritiene l'intervista completa (nessun modo per il partecipante di saltarla prima) si apre da sola la scheda, con la stessa struttura del template — 1.0 Problema/opportunità di business · 1.1 Soluzione proposta · 1.2 Obiettivi strategici · 1.3 Dati e contesto · 1.4 Impatto atteso · 1.5 Metriche di successo · 1.6 Valutazione etica preliminare · 1.7 Rischi, complessità e resistenze — con le informazioni raccolte già organizzate nei campi.
 
-- Ogni campo resta **modificabile a mano**; si conferma con "Confermo la scheda". La bozza si autosalva come negli altri step.
-- "Torna alla conversazione" e "Chiedi all'assistente" (per sezione) riportano alla chat con la domanda già scritta: si completa raccontando, invece di scrivere campo per campo.
-- In fondo alla scheda, **"Scarica PDF"**: il PDF si compone con le primitive testuali di jsPDF (`src/lib/useCasePdf.ts`), non fotografando il DOM, così va su più pagine e il testo resta selezionabile.
+- I campi sono in **sola lettura**: nessuna compilazione manuale. Per correggere o aggiungere qualcosa si torna a parlarne con l'assistente ("Torna alla conversazione" o "Chiedi all'assistente" per sezione, con la domanda già scritta), poi si torna qui da soli quando l'agente riconferma il completamento.
+- Si conferma con "Confermo la scheda"; la bozza si autosalva come negli altri step.
+- In fondo alla scheda, **"Scarica PDF"**: il PDF si compone con le primitive testuali di jsPDF (`src/lib/useCasePdf.ts`), non fotografando il DOM, così va su più pagine, il testo resta selezionabile e riporta anche l'esito dello Step 3 (raccomandazione del sistema e scelta del partecipante, coi rispettivi punteggi).
 - La fase raggiunta (`interviewDone`) vive lato server: il rientro riapre la scheda invece di ricominciare la conversazione.
-- La dashboard del facilitatore mostra ✅ per le schede confermate, `n/N` per quelle in bozza, e un pulsante **PDF per ogni partecipante** che scarica la sua scheda dai dati salvati (non serve che la pagina del partecipante sia aperta).
+- La dashboard del facilitatore mostra ✅ per le schede confermate, `n/N` per quelle in bozza, la raccomandazione dello Step 3 a confronto con la scelta del partecipante (con un'icona quando divergono), e un pulsante **PDF per ogni partecipante** che scarica la sua scheda dai dati salvati (non serve che la pagina del partecipante sia aperta). Lo stesso confronto raccomandazione/scelta è nell'export Excel (**"Esporta dashboard"**, `src/lib/dashboardExport.ts`).
 
 ## Interazione vocale
 
@@ -51,15 +52,7 @@ Tutto passa dalle API del browser (Web Speech, `src/components/VoiceInput.tsx`):
 
 ## Pulsante "test"
 
-In alto in ogni pagina c'è un piccolo pulsante **test** che compila i campi di quella pagina con dati di esempio (`src/lib/testData.ts`), per provare il tool o verificare un deploy senza digitare tutto:
-
-| Pagina | Che cosa fa |
-| --- | --- |
-| home | apre `/join` con il nome di esempio già inserito |
-| ingresso partecipante | nome di esempio, più l'ultimo codice sessione visto su quel browser (il codice non si può inventare) |
-| login facilitatore | nome di esempio (la password resta da inserire) |
-| dashboard facilitatore | sblocca tutti gli step |
-| vista partecipante | compila lo step che si sta guardando: Step 1, Step 2, Step 1+2 per vedere l'esito nello Step 3, o la scheda Use Case già piena |
+Il pulsante **test** compila con dati di esempio (`src/lib/testData.ts`) lo step che il partecipante sta guardando: Step 1, Step 2, Step 1+2 per vedere l'esito nello Step 3, o la scheda Use Case già piena. Compare solo nella vista partecipante autenticata (`/session/[code]`, dopo l'ingresso in sessione): non nella home, in `/join`, nel login del facilitatore né nella sua dashboard, per non lasciare scorciatoie prima dell'accesso vero.
 
 I dati di esempio sono coerenti fra gli step: lo Step 2 lavora sulle candidate generate dallo Step 1 e la scheda Use Case racconta la stessa attività.
 
@@ -124,11 +117,12 @@ src/
 │                                     # UseCaseInterview (la chat che compila la scheda),
 │                                     # AgentChat, AssistantPanel (pannello fisso a destra),
 │                                     # VoiceInput (microfono e lettura), TestFillButton, ResumeCard
-├── config/block1Frizione.ts          # Blocco 1: 21 domande, ancoraggi, tecnologie, messaggi, prompt
+├── config/block1Frizione.ts          # Blocco 1: domande, ancoraggi, tecnologie, messaggi, prompt
 ├── config/block2Form.ts              # Step 4: sezioni e campi della scheda, argomenti e prompt dell'intervista
 └── lib/                              # tipi, frizioneScoring (calcolo esito), client Redis,
                                       # helper sessione, auth, client API, participantStorage,
-                                      # useCasePdf (export della scheda), testData (pulsante "test")
+                                      # useCasePdf (export scheda in PDF), dashboardExport (export
+                                      # dashboard in Excel), testData (pulsante "test")
 ```
 
 ## Estendere ai blocchi successivi

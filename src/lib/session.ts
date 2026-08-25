@@ -9,6 +9,7 @@ import {
   SessionSummary,
   Step1Submission,
   Step2Submission,
+  Step3Choice,
   Submission,
   UnlockedSteps,
 } from "./types";
@@ -270,6 +271,22 @@ export async function saveStep2(
   return current;
 }
 
+/**
+ * Step 3 — scelta finale del partecipante: raccomandazione del sistema e
+ * decisione effettiva, con i rispettivi punteggi (vedi Step3Choice). Si fonde
+ * come gli altri step, così un salvataggio parziale non perde il resto.
+ */
+export async function saveStep3(
+  code: string,
+  participantId: string,
+  data: Step3Choice
+): Promise<Submission> {
+  const redis = getRedis();
+  const current = await getSubmission(code, participantId);
+  current.step3 = { ...current.step3, ...data };
+  await redis.set(keySubmission(code, participantId), current, { ex: SESSION_TTL_SECONDS });
+  return current;
+}
 
 /**
  * Blocco 2 — Use Case Submission. I valori dei campi si fondono per id, così un
