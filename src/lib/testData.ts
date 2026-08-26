@@ -7,7 +7,12 @@
 import { BLOCK2_INTERVIEW_GROUPS } from "@/config/block2Form";
 import { Block2FieldValue, Step1Answer, Step1Submission, Step2Submission } from "./types";
 import { candidateAttive } from "./frizioneScoring";
-import { CARATTERISTICHE, DOMANDE, DOMANDA_CRITERI_TACITI } from "@/config/block1Frizione";
+import {
+  CARATTERISTICHE,
+  DOMANDE,
+  DOMANDA_CRITERI_TACITI,
+  normalizeStep2Value,
+} from "@/config/block1Frizione";
 import { nowMs } from "./time";
 
 export type TestScenario = {
@@ -31,7 +36,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       19: { nome: "Check di conformità sui documenti di gara", impatto: 5.0 },
     },
     criteriTaciti: true,
-    step2Overrides: { 1: 5.5, 6: 8.0, 11: 8.0 },
+    step2Overrides: { 1: 6, 6: 8, 11: 8 },
     useCase: {
       problema:
         "Le fatture fornitore arrivano via email in PDF con layout diversi e vengono registrate a mano nell'ERP: due persone dell'amministrazione ricopiano intestazione, righe e centro di costo. Il ciclo di registrazione impiega in media 3 giorni, gli errori di imputazione vengono scoperti a fine mese e obbligano a note di credito e riaperture di periodo.",
@@ -86,7 +91,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       16: { nome: "Sintesi delle richieste tecniche per il reparto competente", impatto: 8.0 },
     },
     criteriTaciti: false,
-    step2Overrides: { 3: 5.0, 16: 8.0, 12: 8.0 },
+    step2Overrides: { 3: 5, 16: 8, 12: 8 },
     useCase: {
       problema:
         "I clienti inviano richieste di supporto eterogenee via portale ed email. Gli operatori spendono oltre il 40% del tempo nella lettura preliminare, classificazione per urgenza e instradamento manuale verso i team tecnici di secondo livello.",
@@ -135,7 +140,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       16: { nome: "Sintesi note di debriefing e verbali di colloquio", impatto: 7.0 },
     },
     criteriTaciti: false,
-    step2Overrides: { 3: 6.0, 14: 8.5, 16: 7.5 },
+    step2Overrides: { 3: 6, 14: 9, 16: 8 },
     useCase: {
       problema:
         "Per ogni selezione aperta arrivano centinaia di CV con formati eterogenei. I recruiter impiegano settimane nella lettura manuale preliminare per verificare requisiti di base e certificazioni, rallentando l'intero processo di inserimento.",
@@ -183,7 +188,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       19: { nome: "Controllo documentale conformità DURC e certificazioni", impatto: 7.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 6: 9.0, 2: 5.5, 19: 8.0 },
+    step2Overrides: { 6: 9, 2: 6, 19: 8 },
     useCase: {
       problema:
         "Il confronto delle offerte economiche per gare di fornitura richiede ore di allineamento manuale su fogli di calcolo per omogeneizzare voci di costo, sconti scaglionati, condizioni di trasporto e tempi di consegna da preventivi non strutturati.",
@@ -231,7 +236,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       8: { nome: "Generazione commentari e reportistica mensile di chiusura", impatto: 8.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 8: 8.5, 7: 8.0, 5: 9.0 },
+    step2Overrides: { 8: 9, 7: 8, 5: 9 },
     useCase: {
       problema:
         "La stesura del fascicolo di commento alla chiusura mensile richiede giorni di raccolta dati ed estrazione manuale di tabelle, lasciando pochissimo tempo per l'analisi strategica delle cause alla base degli scostamenti rispetto al budget.",
@@ -279,7 +284,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       15: { nome: "Trascrizione vocale report intervento manutentore", impatto: 6.0 },
     },
     criteriTaciti: true,
-    step2Overrides: { 7: 8.0, 9: 6.5, 15: 7.0 },
+    step2Overrides: { 7: 8, 9: 7, 15: 7 },
     useCase: {
       problema:
         "I fermi linea improvvisi sulle macchine di confezionamento costano fino a 7.500€/ora. La manutenzione programmata a calendario non intercetta i guasti accidentali causati da anomalie meccaniche progressive.",
@@ -327,7 +332,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       14: { nome: "Consultazione repository sentenze e pareri interni pregressi", impatto: 7.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 12: 9.0, 11: 8.5, 14: 8.0 },
+    step2Overrides: { 12: 9, 11: 9, 14: 8 },
     useCase: {
       problema:
         "La verifica e negoziazione dei contratti standard (accordi di riservatezza, forniture, lettere d'intenti) impegna l'80% del tempo dei legali interni, rallentando la firma degli accordi commerciali.",
@@ -375,7 +380,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       20: { nome: "Scelta del corriere secondo peso, volume e tratta", impatto: 7.0 },
     },
     criteriTaciti: false,
-    step2Overrides: { 6: 8.0, 1: 5.0, 20: 7.5 },
+    step2Overrides: { 6: 8, 1: 5, 20: 8 },
     useCase: {
       problema:
         "La verifica documentale dei documenti di trasporto (DDT) all'arrivo delle merci in banchina genera colli di bottiglia e lunghe attese per i trasportatori, con frequenti discrepanze riscontrate solo dopo lo scarico.",
@@ -423,7 +428,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       16: { nome: "Sintesi da report di settore per articoli divulgativi sul blog", impatto: 6.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 11: 8.5, 12: 8.0, 16: 7.5 },
+    step2Overrides: { 11: 9, 12: 8, 16: 8 },
     useCase: {
       problema:
         "Il lancio periodico di nuovi prodotti richiede la redazione di decine di varianti di testo per canali differenti (social media, newsletter, schede ecommerce, comunicati stampa) in italiano, inglese, tedesco e francese.",
@@ -471,7 +476,7 @@ export const TEST_SCENARIOS: TestScenario[] = [
       19: { nome: "Checklist di conformità audit ISO 9001 e IATF 16949", impatto: 8.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 19: 9.0, 15: 7.5, 8: 8.0 },
+    step2Overrides: { 19: 9, 15: 8, 8: 8 },
     useCase: {
       problema:
         "A fronte di una non conformità o reclamo cliente, la redazione della scheda 8D richiede 4-5 giorni di ricerche incrociate tra reparti per recuperare lotti di materia prima, parametri di processo e schede di collaudo.",
@@ -566,10 +571,10 @@ export function testStep2Submission(
   for (const candidata of candidateAttive(step1)) {
     const override = scenario?.step2Overrides?.[candidata.domandaId];
     if (typeof override === "number") {
-      valori[String(candidata.domandaId)] = override;
+      valori[String(candidata.domandaId)] = normalizeStep2Value(override);
     } else {
-      valori[String(candidata.domandaId)] =
-        CARATTERISTICHE[candidata.blocco].tipo === "campana" ? 5.5 : 8.5;
+      const generated = CARATTERISTICHE[candidata.blocco].tipo === "campana" ? 6 : 9;
+      valori[String(candidata.domandaId)] = normalizeStep2Value(generated);
     }
   }
   return { valori, updatedAt: nowMs() };

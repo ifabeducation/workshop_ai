@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Send, Sparkles } from "lucide-react";
+import { ArrowRight, Send, Sparkles } from "lucide-react";
 import {
   BLOCK2_INTERVIEW_GROUPS,
   BLOCK2_INTERVIEW_GROUP_COUNT,
@@ -31,16 +31,20 @@ export default function UseCaseInterview({
   values,
   closedGroups,
   chatLog,
+  facilitatorAuthorized,
   onTurn,
   onDone,
+  onAuthorizedProceed,
 }: {
   processoContext: string;
   selectedAction: string;
   values: Record<string, Block2FieldValue>;
   closedGroups: string[];
   chatLog: ChatMessage[];
+  facilitatorAuthorized: boolean;
   onTurn: (turn: InterviewTurn) => void;
   onDone: () => void;
+  onAuthorizedProceed: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(
     chatLog.length > 0 ? chatLog : [{ role: "assistant", content: INITIAL_MESSAGE_USE_CASE_INTERVIEW }]
@@ -240,6 +244,23 @@ export default function UseCaseInterview({
       <p className="text-xs text-ifab-text-muted">
         La scheda verrà generata automaticamente quando l&apos;assistente avrà raccolto informazioni sufficienti.
       </p>
+
+      {facilitatorAuthorized && (
+        <section className="rounded-xl border border-ifab-blue/30 bg-ifab-blue/5 p-4">
+          <p className="text-sm font-semibold text-ifab-navy">Accesso autorizzato dal facilitatore</p>
+          <p className="mt-1 text-xs leading-relaxed text-ifab-text-muted">
+            Puoi continuare l&apos;intervista oppure procedere allo Use Case. Le informazioni non raccolte saranno
+            indicate esplicitamente come non disponibili.
+          </p>
+          <button
+            type="button"
+            onClick={onAuthorizedProceed}
+            className="mt-3 flex items-center gap-2 rounded-lg bg-ifab-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-ifab-navy-deep"
+          >
+            Procedi allo Use Case <ArrowRight size={15} />
+          </button>
+        </section>
+      )}
     </div>
   );
 }

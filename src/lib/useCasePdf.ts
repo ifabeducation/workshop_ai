@@ -146,11 +146,16 @@ export async function downloadUseCasePdf({
     for (const field of section.fields) {
       const value = values[field.id];
       write(field.label, { size: 8.5, style: "bold" });
-      write(isBlock2ValueFilled(value) ? block2ValueLabel(field, value) : "— non compilato", {
+      write(
+        isBlock2ValueFilled(value)
+          ? block2ValueLabel(field, value)
+          : "Informazione non disponibile / non conosciuta dal partecipante",
+        {
         size: 10,
         style: "normal",
         gap: 6,
-      });
+        }
+      );
     }
 
     y += 6;

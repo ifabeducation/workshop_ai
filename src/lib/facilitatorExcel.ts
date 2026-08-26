@@ -24,7 +24,8 @@ function summaryRows(rows: AggregateRow[]): ExportRow[] {
     const useCase = Object.fromEntries(
       BLOCK2_FIELDS.map((field) => [
         `Use Case · ${field.label}`,
-        block2ValueLabel(field, submission.block2?.values?.[field.id]) || "",
+        block2ValueLabel(field, submission.block2?.values?.[field.id]) ||
+          "Informazione non disponibile / non conosciuta dal partecipante",
       ])
     );
 

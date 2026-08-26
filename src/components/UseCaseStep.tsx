@@ -6,6 +6,7 @@ import {
   BLOCK2_SECTIONS,
   block2ValueLabel,
   isBlock2ValueFilled,
+  remainingInterviewGroups,
 } from "@/config/block2Form";
 import { calcolaEsiti, candidateAttive } from "@/lib/frizioneScoring";
 import {
@@ -56,13 +57,19 @@ export default function UseCaseStep({
   onSaved: (data: Block2Submission) => void;
   ref?: Ref<UseCaseStepHandle>;
 }) {
+  const initiallyNaturallyComplete = remainingInterviewGroups(block2?.closedGroups).length === 0;
+  const initiallyAuthorized = Boolean(block2?.facilitatorUseCaseAuthorized);
   const [values, setValues] = useState<Record<string, Block2FieldValue>>(block2?.values ?? {});
   const [chatLog, setChatLog] = useState<ChatMessage[]>(block2?.chatLog ?? []);
   const [closedGroups, setClosedGroups] = useState<string[]>(block2?.closedGroups ?? []);
   const [phase, setPhase] = useState<"intervista" | "scheda">(
-    block2?.interviewDone || block2?.completedAt ? "scheda" : "intervista"
+    block2?.completedAt ||
+      (block2?.interviewDone && (initiallyNaturallyComplete || initiallyAuthorized))
+      ? "scheda"
+      : "intervista"
   );
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(block2?.completedAt ?? null);
   const [exporting, setExporting] = useState(false);
   const [draftState, setDraftState] = useState<"idle" | "saving" | "saved">(
@@ -88,6 +95,10 @@ export default function UseCaseStep({
   const compiled = BLOCK2_SECTIONS.flatMap((s) => s.fields).filter((f) =>
     isBlock2ValueFilled(values[f.id])
   ).length;
+  const naturallyComplete = remainingInterviewGroups(closedGroups).length === 0;
+  const facilitatorAuthorized = Boolean(block2?.facilitatorUseCaseAuthorized);
+  const canShowScheda = Boolean(block2?.completedAt) || naturallyComplete || facilitatorAuthorized;
+  const effectivePhase = phase === "scheda" && canShowScheda ? "scheda" : "intervista";
 
   useEffect(() => {
     onSavedRef.current = onSaved;
@@ -163,9 +174,14 @@ export default function UseCaseStep({
   }
 
   /** Fine dell'intervista decisa dall'agente: si apre la scheda da confermare. */
-  async function openScheda() {
+  async function openScheda(viaFacilitatorAuthorization = false) {
     setPhase("scheda");
-    const data: Block2Submission = { interviewDone: true, updatedAt: nowMs() };
+    const now = nowMs();
+    const data: Block2Submission = {
+      interviewDone: true,
+      facilitatorAuthorizationUsedAt: viaFacilitatorAuthorization ? now : undefined,
+      updatedAt: now,
+    };
     try {
       await submitBlock2(code, participantId, data);
       onSaved(data);
@@ -180,6 +196,7 @@ export default function UseCaseStep({
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
       dirtyRef.current = false;
       const data: Block2Submission = {
@@ -192,6 +209,8 @@ export default function UseCaseStep({
       onSaved(data);
       setSavedAt(nowMs());
       setDraftState("saved");
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Non è stato possibile confermare lo Use Case");
     } finally {
       setSaving(false);
     }
@@ -214,7 +233,7 @@ export default function UseCaseStep({
     }
   }
 
-  if (phase === "intervista") {
+  if (effectivePhase === "intervista") {
     return (
       <UseCaseInterview
         processoContext={processoContext}
@@ -223,7 +242,9 @@ export default function UseCaseStep({
         closedGroups={closedGroups}
         chatLog={chatLog}
         onTurn={handleTurn}
-        onDone={openScheda}
+        facilitatorAuthorized={facilitatorAuthorized}
+        onDone={() => void openScheda(false)}
+        onAuthorizedProceed={() => void openScheda(true)}
       />
     );
   }
@@ -307,6 +328,7 @@ export default function UseCaseStep({
             {draftState === "saving" ? "Salvataggio bozza..." : "Bozza salvata — la ritrovi al rientro"}
           </span>
         )}
+        {saveError && <span className="text-xs text-red-600">{saveError}</span>}
       </div>
     </div>
   );

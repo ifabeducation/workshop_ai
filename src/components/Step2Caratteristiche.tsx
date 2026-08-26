@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Lock, Save } from "lucide-react";
-import { CARATTERISTICHE, INITIAL_MESSAGE_STEP2 } from "@/config/block1Frizione";
+import {
+  CARATTERISTICHE,
+  INITIAL_MESSAGE_STEP2,
+  normalizeStep2Value,
+  STEP2_VALUE_MAX,
+  STEP2_VALUE_MIN,
+  STEP2_VALUE_STEP,
+} from "@/config/block1Frizione";
 import { ChatMessage, Step1Submission, Step2Submission } from "@/lib/types";
 import { candidateAttive } from "@/lib/frizioneScoring";
 import { submitStep2 } from "@/lib/clientApi";
@@ -100,7 +107,10 @@ export default function Step2Caratteristiche({
   function setValore(v: number) {
     if (readOnly) return;
     dirtyRef.current = true;
-    setValori((prev) => ({ ...prev, [String(corrente.domandaId)]: v }));
+    setValori((prev) => ({
+      ...prev,
+      [String(corrente.domandaId)]: normalizeStep2Value(v),
+    }));
   }
 
   async function handleConcludi() {
@@ -173,9 +183,9 @@ export default function Step2Caratteristiche({
         <div className="mt-4 flex items-center gap-3">
           <input
             type="range"
-            min={1}
-            max={10}
-            step={1}
+            min={STEP2_VALUE_MIN}
+            max={STEP2_VALUE_MAX}
+            step={STEP2_VALUE_STEP}
             disabled={readOnly}
             value={valore ?? 5}
             onChange={(e) => setValore(Number(e.target.value))}

@@ -113,6 +113,12 @@ export type Block2Submission = {
   chatLog?: ChatMessage[];
   closedGroups?: string[];
   interviewDone?: boolean;
+  /** Permesso eccezionale, concesso solo dal facilitatore a questa submission. */
+  facilitatorUseCaseAuthorized?: boolean;
+  facilitatorAuthorizedAt?: number;
+  facilitatorAuthorizedBy?: string;
+  facilitatorAuthorizationRevokedAt?: number;
+  facilitatorAuthorizationUsedAt?: number;
   updatedAt?: number;
   completedAt?: number;
 };

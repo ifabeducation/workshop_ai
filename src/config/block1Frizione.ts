@@ -109,6 +109,16 @@ export const MESSAGGIO_NESSUN_SI =
 
 // --- Step 2: una caratteristica per blocco -------------------------------
 
+export const STEP2_VALUE_MIN = 1;
+export const STEP2_VALUE_MAX = 10;
+export const STEP2_VALUE_STEP = 1;
+
+/** Applica le stesse regole dello slider reale anche ai dati generati dal Test. */
+export function normalizeStep2Value(value: number): number {
+  const integer = Math.round(value / STEP2_VALUE_STEP) * STEP2_VALUE_STEP;
+  return Math.min(STEP2_VALUE_MAX, Math.max(STEP2_VALUE_MIN, integer));
+}
+
 export type CaratteristicaSlider = {
   blocco: FrizioneBlocco;
   /** "campana": l'ottimo è al centro; "lineare": più alto è meglio. */
