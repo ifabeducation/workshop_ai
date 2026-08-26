@@ -513,7 +513,7 @@ export function sanitizeInterviewFields(raw: unknown): Record<string, Block2Fiel
 }
 
 /** Primo messaggio dell'intervista: la domanda generica sul processo. */
-export const INITIAL_MESSAGE_USE_CASE_INTERVIEW = `Ciao! Compiliamo insieme la scheda del caso d'uso parlando: da quello che mi racconti ricavo io i campi del modulo, e alla fine te lo mostro per la conferma. Se una cosa non la sai, dimmelo e andiamo avanti — puoi anche rispondere a voce col pulsante del microfono.
+export const INITIAL_MESSAGE_USE_CASE_INTERVIEW = `Ciao! Costruiamo insieme la scheda del caso d'uso: io ascolto, collego le informazioni e faccio gli approfondimenti necessari. Puoi scrivere oppure parlare con il pulsante del microfono. Se qualcosa non è chiaro, proveremo a capirlo insieme senza inventare dati.
 
 ${BLOCK2_INTERVIEW_GROUPS[0].domanda}`;
 
@@ -546,6 +546,7 @@ export function buildUseCaseInterviewSystemPrompt(ctx: {
   processoContext: string;
   remainingGroups: Block2InterviewGroup[];
   compiledFieldIds: string[];
+  currentValues: Record<string, Block2FieldValue>;
 }): string {
   const contesto = ctx.processoContext
     ? `L'attività emersa dal Blocco 1 è: ${ctx.processoContext}. Parti da lì: è di quel processo che si parla.`
@@ -563,10 +564,16 @@ export function buildUseCaseInterviewSystemPrompt(ctx: {
       ? `Campi già compilati (non richiederli di nuovo, salvo correzione): ${ctx.compiledFieldIds.join(", ")}.`
       : "Nessun campo compilato finora.";
 
+  const valoriCorrenti =
+    Object.keys(ctx.currentValues).length > 0
+      ? `Valori già raccolti, da conservare e integrare senza impoverirli:\n${JSON.stringify(ctx.currentValues, null, 2)}`
+      : "Non ci sono ancora valori raccolti.";
+
   return `Sei un facilitatore esperto di adozione dell'AI in azienda. Conduci un'intervista con un partecipante di un workshop per compilare al suo posto la scheda "Use Case Submission": lui racconta, tu ricavi i campi del modulo. Alla fine la scheda gli verrà mostrata per la conferma, quindi non deve compilare nulla a mano.
 
 ${contesto}
 ${compilati}
+${valoriCorrenti}
 
 **CAMPI DELLA SCHEDA** (usa esattamente questi id e, per le scelte, esattamente i valori ammessi):
 ${fieldCatalog()}
@@ -575,23 +582,28 @@ ${fieldCatalog()}
 ${daCoprire}
 
 **COME CONDUCI**
-- Una sola domanda per turno, sul primo argomento ancora da coprire; usa la domanda suggerita, adattandola a quello che il partecipante ha già raccontato.
-- Non spezzare un argomento in più domande: i campi di un argomento si chiedono insieme.
+- Agisci come un intervistatore intelligente: dopo ogni risposta valuta ciò che è chiaro, incompleto, mancante, contraddittorio o fuori tema e scegli la domanda successiva più utile.
+- Fai una domanda principale per turno. Non seguire meccanicamente l'ordine: adatta la domanda a ciò che è già emerso e collega i follow-up alle risposte precedenti.
+- Approfondisci quanto serve. Chiedi esempi, numeri, frequenze, quantità, strumenti, software, sistemi, persone o ruoli, input, output, criteri, soglie, problemi, eccezioni e vincoli quando sono pertinenti.
 - Se una risposta contiene informazioni di argomenti successivi, compila anche quei campi e chiudi quegli argomenti: non richiederli.
-- Se una risposta è troppo vaga per compilare il campo principale dell'argomento, fai una sola richiesta di precisazione, poi accontentati di quello che ottieni.
-- Se il partecipante non sa o vuole saltare, scrivi "Da verificare" nei campi di testo dell'argomento, lascia vuote le scelte a opzione e chiudi comunque l'argomento.
-- Riformula tu in modo sintetico e concreto quello che ti dice: nei campi va la sua informazione, in forma pulita, senza inventare cifre, sistemi o normative che non ha citato.
-- Quando non resta più nessun argomento, dì in una riga che la scheda è pronta e che ora la vedrà per confermarla o correggerla.
+- Non considerare sufficiente una risposta solo perché contiene testo. "Non lo so", "boh", "forse", "dipende", "non saprei", parole casuali, risposte fuori tema o troppo vaghe NON chiudono l'argomento: riformula con una domanda più semplice, esempi concreti o alternative.
+- Se emergono contraddizioni, evidenziale con tatto e chiedi quale informazione è corretta prima di salvare il campo.
+- Solo dopo almeno tre tentativi sensati sullo stesso dato, se il partecipante conferma di non conoscerlo, puoi scrivere "Informazione non disponibile / non conosciuta dal partecipante". Non usare questa formula al primo tentativo.
+- Chiudi un argomento soltanto quando le informazioni necessarie sono realmente utilizzabili oppure quando le informazioni ignote sono state gestite con la regola dei tentativi. Il completamento dipende dalla qualità e completezza, mai da un numero fisso di domande.
+- Nei campi conserva tutti i dettagli utili. Non sostituire numeri, frequenze, strumenti, ruoli, input/output, criteri, soglie, eccezioni o vincoli con un riassunto generico. Integra i valori correnti senza cancellare dettagli precedenti.
+- Non inventare cifre, sistemi, persone, normative o conclusioni. Quando non resta più nessun argomento, comunica che la scheda è pronta per la conferma.
 
 **FORMATO DELLA RISPOSTA**
 Rispondi SEMPRE e SOLO con un oggetto JSON valido con queste chiavi:
 {
-  "reply": "il messaggio per il partecipante, in italiano, con il tu, massimo 4-5 righe",
+  "reply": "il messaggio per il partecipante, in italiano, con il tu e una domanda di approfondimento specifica quando necessaria",
   "fields": { "idCampo": "testo" | ["valore1", "valore2"] },
-  "closed": ["chiave-argomento-appena-chiuso"]
+  "closed": ["chiave-argomento-appena-chiuso"],
+  "unavailable": ["idCampo-realmente-non-conosciuto"]
 }
-- "fields": solo i campi che puoi compilare con quello che il partecipante ha detto in questa conversazione. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti i campi che non sai.
-- "closed": le chiavi degli argomenti che consideri conclusi in questo turno (anche più di uno). Non chiudere un argomento di cui non hai ancora chiesto nulla.
+- "fields": i campi nuovi o aggiornati con le informazioni del partecipante. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti ciò che non è sufficientemente chiaro.
+- "closed": soltanto le chiavi degli argomenti realmente completi in questo turno. Una risposta vaga, casuale, incoerente o non pertinente non consente di chiudere l'argomento.
+- "unavailable": soltanto gli id dei campi che il partecipante, dopo almeno tre tentativi utili, conferma di non conoscere. Non usarlo per risposte vaghe al primo tentativo.
 - Nessun testo fuori dal JSON, nessun markdown.
 
 **REGOLE ASSOLUTE**

@@ -1,5 +1,5 @@
 // Configurazione del Blocco 1 — "Scheda di attrito"
-// Step 1: 21 domande sì/no con slider di impatto sui sì.
+// Step 1: 18 domande sì/no con slider di impatto sui sì.
 // Step 2: una caratteristica per candidata, decisa dal blocco della domanda.
 // Step 3: esito calcolato (vedi lib/frizioneScoring.ts).
 // Tutto il contenuto testuale sta qui: domande, ancoraggi, tecnologie, messaggi.
@@ -33,12 +33,12 @@ export type DomandaFrizione = {
   attivita: string[];
 };
 
-export const DOMANDE: DomandaFrizione[] = [
+const DOMANDE_STORICHE: DomandaFrizione[] = [
   { id: 1, blocco: "sposti", testo: "Leggi un dato in un sistema e lo riscrivi in un altro?", attivita: ["ricopiature", "inserimento dati"] },
   { id: 2, blocco: "sposti", testo: "Ricevi documenti dello stesso tipo con formati o layout diversi?", attivita: ["ricopiature", "inserimento dati", "classificazioni"] },
   { id: 3, blocco: "sposti", testo: "Assegni categorie o codici decidendo in pochi secondi?", attivita: ["classificazioni", "triage e smistamento"] },
   { id: 4, blocco: "sposti", testo: "Compili campi il cui valore è già scritto altrove?", attivita: ["inserimento dati", "ricopiature"] },
-  { id: 5, blocco: "controlli", testo: "Riguardi periodicamente gli stessi numeri per verificare che nulla sia cambiato?", attivita: ["controlli ricorrenti", "individuazione di anomalie"] },
+  { id: 5, blocco: "controlli", testo: "Riguardi periodicamente gli stessi numeri per verificare se qualcosa è cambiato?", attivita: ["controlli ricorrenti", "individuazione di anomalie"] },
   { id: 6, blocco: "controlli", testo: "Confronti due fonti diverse per controllare se coincidono?", attivita: ["riconciliazioni", "controlli ricorrenti"] },
   { id: 7, blocco: "controlli", testo: "Ti è capitato di accorgerti tardi di uno scostamento già visibile nei dati?", attivita: ["individuazione di anomalie", "previsioni"] },
   { id: 8, blocco: "controlli", testo: "Produci report con la stessa struttura a intervalli regolari?", attivita: ["reportistica ricorrente", "controlli ricorrenti"] },
@@ -53,9 +53,14 @@ export const DOMANDE: DomandaFrizione[] = [
   { id: 17, blocco: "decidi", testo: "Concedi autorizzazioni che non hai praticamente mai negato?", attivita: ["approvazioni con soglie prestabilite"] },
   { id: 18, blocco: "decidi", testo: "Capisci a chi inoltrare una richiesta leggendo solo l'oggetto?", attivita: ["triage e smistamento", "classificazioni"] },
   { id: 19, blocco: "decidi", testo: "Verifichi la presenza di elementi obbligatori seguendo una lista?", attivita: ["controlli di conformità", "controlli ricorrenti"] },
-  { id: 20, blocco: "decidi", testo: "Applichi soglie o priorità che sapresti scrivere su un foglio?", attivita: ["attribuzioni di priorità", "approvazioni con soglie"] },
+  { id: 20, blocco: "decidi", testo: "Applichi soglie o priorità secondo criteri espliciti?", attivita: ["attribuzioni di priorità", "approvazioni con soglie"] },
   { id: 21, blocco: "decidi", testo: "Le eccezioni le gestisci con criteri non documentati?", attivita: ["attribuzioni di priorità", "controlli di conformità", "approvazioni con soglie"] },
 ];
+
+/** Il questionario corrente omette le domande ritirate, conservate sopra per leggere le submission storiche. */
+export const DOMANDE: DomandaFrizione[] = DOMANDE_STORICHE.filter(
+  (domanda) => ![13, 18, 21].includes(domanda.id)
+);
 
 /**
  * Domanda "spia": un sì è un segnale negativo. Non apre lo slider di impatto e
@@ -73,7 +78,7 @@ export const SOGLIA_AVVISO_SI = 8;
 export const NUMERO_CANDIDATE = 3;
 
 export function domandaById(id: number): DomandaFrizione | undefined {
-  return DOMANDE.find((d) => d.id === id);
+  return DOMANDE_STORICHE.find((d) => d.id === id);
 }
 
 /** Nome proposto per una candidata quando il partecipante non ne scrive uno. */
@@ -185,7 +190,7 @@ function supportAgentRules() {
 export function buildStep1SystemPrompt(): string {
   const elenco = DOMANDE.map((d) => `${d.id}. ${d.testo}`).join("\n");
 
-  return `Sei un facilitatore esperto di adozione dell'AI. Un partecipante sta compilando una "scheda di attrito": 21 domande sì/no sulle frizioni del suo lavoro quotidiano. Per ogni sì indica anche quanto quell'attività pesa negativamente sul processo, da 1 a 10.
+  return `Sei un facilitatore esperto di adozione dell'AI. Un partecipante sta compilando una "scheda di attrito": 18 domande sì/no sulle frizioni del suo lavoro quotidiano. Per ogni sì indica anche quanto quell'attività pesa negativamente sul processo, da 1 a 10.
 
 **LE DOMANDE**
 ${elenco}

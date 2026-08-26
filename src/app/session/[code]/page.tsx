@@ -2,7 +2,7 @@
 
 import { Fragment, startTransition, use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Lock, RotateCcw, Users, X } from "lucide-react";
+import { AlertTriangle, LogOut, Lock, RotateCcw, Users, X } from "lucide-react";
 import {
   ApiError,
   fetchState,
@@ -62,6 +62,7 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
   // I componenti degli step tengono in stato locale i propri valori: dopo un
   // riempimento di test vanno rimontati, altrimenti mostrano ancora i vecchi.
   const [testStamp, setTestStamp] = useState(0);
+  const [confirmNonOptimal, setConfirmNonOptimal] = useState(false);
   const useCaseRef = useRef<UseCaseStepHandle>(null);
 
   /** L'identità salvata non vale più (sessione scaduta, nuova sessione, dati ripuliti). */
@@ -178,7 +179,7 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
    * Ogni cambio di step viene memorizzato lato server: al rientro (anche da un
    * altro dispositivo) si riparte da qui invece che sempre dal primo step.
    */
-  function handleTabChange(nextTab: ParticipantTab) {
+  function commitTabChange(nextTab: ParticipantTab) {
     setTab(nextTab);
     setResumedBanner(false);
     const current = identity;
@@ -186,6 +187,39 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
     void saveProgress(code, current.participantId, { tab: nextTab, updatedAt: nowMs() }).catch(() => {
       // La posizione è un comfort, non un dato del workshop: se fallisce si prosegue.
     });
+  }
+
+  function handleTabChange(nextTab: ParticipantTab) {
+    if (nextTab !== "UC") {
+      commitTabChange(nextTab);
+      return;
+    }
+
+    const decision = submission?.step2?.step3Decision;
+    if (!decision) {
+      commitTabChange("3");
+      return;
+    }
+    if (
+      decision.selected.domandaId !== decision.recommended.domandaId &&
+      !decision.nonOptimalConfirmed
+    ) {
+      setConfirmNonOptimal(true);
+      return;
+    }
+    commitTabChange("UC");
+  }
+
+  async function continueWithNonOptimalChoice() {
+    const current = identity;
+    const decision = submission?.step2?.step3Decision;
+    if (!current || !decision) return;
+
+    const confirmed = { ...decision, nonOptimalConfirmed: true };
+    await submitStep2(code, current.participantId, { step3Decision: confirmed });
+    updateSubmission({ step2: { ...submission?.step2, step3Decision: confirmed } });
+    setConfirmNonOptimal(false);
+    commitTabChange("UC");
   }
 
   /**
@@ -336,7 +370,17 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
             }
           />
         )}
-        {tab === "3" && <Step3Esito participantName={identity.name} step1={step1} step2={step2} />}
+        {tab === "3" && (
+          <Step3Esito
+            participantName={identity.name}
+            code={code}
+            participantId={identity.participantId}
+            step1={step1}
+            step2={step2}
+            onSaved={(data) => updateSubmission({ step2: { ...step2, ...data } })}
+            onProceed={() => handleTabChange("UC")}
+          />
+        )}
         {tab === "UC" &&
           (unlockedSteps.useCase ? (
             <UseCaseStep
@@ -358,6 +402,49 @@ export default function SessionPage({ params }: { params: Promise<{ code: string
             </div>
           ))}
       </main>
+
+      {confirmNonOptimal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ifab-navy/60 px-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="non-optimal-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 shrink-0 text-amber-600" size={22} />
+              <div>
+                <h2 id="non-optimal-title" className="font-semibold text-ifab-navy">
+                  Conferma la tua scelta
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-ifab-text-muted">
+                  La scelta effettuata non corrisponde all&apos;opzione con il valore più alto. Vuoi procedere
+                  comunque?
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmNonOptimal(false);
+                  commitTabChange("3");
+                }}
+                className="rounded-lg border border-ifab-border px-4 py-2 text-sm font-semibold text-ifab-navy"
+              >
+                Torna alla scelta
+              </button>
+              <button
+                type="button"
+                onClick={() => void continueWithNonOptimalChoice()}
+                className="rounded-lg bg-ifab-navy px-4 py-2 text-sm font-semibold text-white"
+              >
+                Continua comunque
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

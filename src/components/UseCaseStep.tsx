@@ -1,11 +1,10 @@
 "use client";
 
 import { Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, FileDown, HelpCircle, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileDown, Save } from "lucide-react";
 import {
   BLOCK2_SECTIONS,
-  Block2Field,
-  Block2Section,
+  block2ValueLabel,
   isBlock2ValueFilled,
 } from "@/config/block2Form";
 import { calcolaEsiti, candidateAttive } from "@/lib/frizioneScoring";
@@ -29,20 +28,12 @@ export type UseCaseStepHandle = {
   fillWithTestData: () => void;
 };
 
-function asText(value: Block2FieldValue | undefined): string {
-  return typeof value === "string" ? value : "";
-}
-
-function asList(value: Block2FieldValue | undefined): string[] {
-  return Array.isArray(value) ? value : [];
-}
-
 /**
  * Step 4 — un unico step per il caso d'uso, in due fasi:
  *   1. intervista: l'agente parte dalla domanda generica sul processo e ricava
  *      i campi della scheda da quello che il partecipante racconta;
- *   2. scheda: gli stessi campi del template, precompilati, da confermare o
- *      correggere a mano, con l'export PDF in fondo.
+ *   2. scheda: gli stessi campi del template, precompilati e non modificabili
+ *      manualmente, da confermare con l'export PDF in fondo.
  * La fase raggiunta vive lato server (`interviewDone`), così il rientro riapre
  * la scheda e non ricomincia la conversazione.
  */
@@ -71,7 +62,6 @@ export default function UseCaseStep({
   const [phase, setPhase] = useState<"intervista" | "scheda">(
     block2?.interviewDone || block2?.completedAt ? "scheda" : "intervista"
   );
-  const [askedQuestion, setAskedQuestion] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(block2?.completedAt ?? null);
   const [exporting, setExporting] = useState(false);
@@ -85,11 +75,16 @@ export default function UseCaseStep({
   const pendingRef = useRef<Record<string, Block2FieldValue> | null>(null);
   const onSavedRef = useRef(onSaved);
 
-  // Contesto per l'agente: la candidata migliore del Blocco 1 (o, se l'esito
-  // non è ancora calcolabile, le candidate in gioco).
+  // Lo Step 4 segue sempre la scelta effettiva del partecipante, non sostituita
+  // dalla raccomandazione del sistema.
   const esiti = calcolaEsiti(step1, step2);
+  const selectedAction = (
+    step2?.step3Decision?.selected.nome ??
+    esiti[0]?.nome ??
+    candidateAttive(step1, step2).map((c) => c.nome).join(", ")
+  ) || "Non disponibile";
   const processoContext =
-    esiti[0]?.nome ?? candidateAttive(step1, step2).map((c) => c.nome).join(", ");
+    selectedAction;
   const compiled = BLOCK2_SECTIONS.flatMap((s) => s.fields).filter((f) =>
     isBlock2ValueFilled(values[f.id])
   ).length;
@@ -135,7 +130,6 @@ export default function UseCaseStep({
       setDraftState("idle");
       setValues((prev) => ({ ...prev, ...testValues }));
       setClosedGroups(TEST_CLOSED_GROUPS);
-      setAskedQuestion(undefined);
       setPhase("scheda");
       void submitBlock2(code, participantId, {
         values: testValues,
@@ -145,17 +139,6 @@ export default function UseCaseStep({
       });
     },
   }));
-
-  function setValue(id: string, value: Block2FieldValue) {
-    dirtyRef.current = true;
-    setDraftState("idle");
-    setValues((prev) => ({ ...prev, [id]: value }));
-  }
-
-  function toggleInList(id: string, option: string) {
-    const current = asList(values[id]);
-    setValue(id, current.includes(option) ? current.filter((v) => v !== option) : [...current, option]);
-  }
 
   /** Un turno di intervista: i campi ricavati entrano nella scheda e si salvano. */
   async function handleTurn(turn: InterviewTurn) {
@@ -179,9 +162,8 @@ export default function UseCaseStep({
     }
   }
 
-  /** Fine dell'intervista (o passaggio manuale): si apre la scheda da confermare. */
+  /** Fine dell'intervista decisa dall'agente: si apre la scheda da confermare. */
   async function openScheda() {
-    setAskedQuestion(undefined);
     setPhase("scheda");
     const data: Block2Submission = { interviewDone: true, updatedAt: nowMs() };
     try {
@@ -192,8 +174,7 @@ export default function UseCaseStep({
     }
   }
 
-  function backToInterview(question?: string) {
-    setAskedQuestion(question);
+  function backToInterview() {
     setPhase("intervista");
   }
 
@@ -219,97 +200,30 @@ export default function UseCaseStep({
   async function handleExportPdf() {
     setExporting(true);
     try {
-      await downloadUseCasePdf({ participantName, code, values, now: nowMs() });
+      await downloadUseCasePdf({
+        participantName,
+        code,
+        values,
+        chatLog,
+        decision: step2?.step3Decision,
+        candidates: esiti,
+        now: nowMs(),
+      });
     } finally {
       setExporting(false);
     }
-  }
-
-  function askAboutSection(section: Block2Section) {
-    backToInterview(
-      `Riprendiamo la sezione "${section.number} ${section.title}": aiutami a completarla meglio.`
-    );
-  }
-
-  function renderField(field: Block2Field) {
-    if (field.type === "textarea") {
-      return (
-        <textarea
-          value={asText(values[field.id])}
-          onChange={(e) => setValue(field.id, e.target.value)}
-          rows={field.rows ?? 4}
-          placeholder={field.placeholder}
-          className="w-full rounded-lg border border-ifab-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ifab-blue"
-        />
-      );
-    }
-
-    if (field.type === "text") {
-      return (
-        <input
-          value={asText(values[field.id])}
-          onChange={(e) => setValue(field.id, e.target.value)}
-          placeholder={field.placeholder}
-          className="w-full rounded-lg border border-ifab-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ifab-blue"
-          autoComplete="off"
-        />
-      );
-    }
-
-    if (field.type === "radio") {
-      const selected = asText(values[field.id]);
-      return (
-        <div className="flex flex-wrap gap-2">
-          {(field.options ?? []).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setValue(field.id, selected === opt.value ? "" : opt.value)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                selected === opt.value
-                  ? "border-ifab-blue bg-ifab-blue text-white"
-                  : "border-ifab-border bg-ifab-bg-soft text-ifab-text hover:border-ifab-blue"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      );
-    }
-
-    const selectedList = asList(values[field.id]);
-    return (
-      <div className="flex flex-wrap gap-2">
-        {(field.options ?? []).map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => toggleInList(field.id, opt.value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-              selectedList.includes(opt.value)
-                ? "border-ifab-blue bg-ifab-blue text-white"
-                : "border-ifab-border bg-ifab-bg-soft text-ifab-text hover:border-ifab-blue"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    );
   }
 
   if (phase === "intervista") {
     return (
       <UseCaseInterview
         processoContext={processoContext}
+        selectedAction={selectedAction}
         values={values}
         closedGroups={closedGroups}
         chatLog={chatLog}
-        initialInput={askedQuestion}
         onTurn={handleTurn}
         onDone={openScheda}
-        onOpenScheda={openScheda}
       />
     );
   }
@@ -320,7 +234,10 @@ export default function UseCaseStep({
         <h2 className="mb-1 text-lg font-semibold text-ifab-navy">Step 4 · Scheda Use Case</h2>
         <p className="text-sm text-ifab-text-muted">
           Queste sono le informazioni che ho raccolto dalla conversazione, organizzate nei campi della scheda.
-          Controllale: puoi correggere qualsiasi campo qui, oppure tornare a parlarne con l&apos;assistente.
+          Controllale: se manca qualcosa, torna alla conversazione e spiegalo all&apos;assistente.
+        </p>
+        <p className="mt-3 rounded-lg border border-ifab-blue/30 bg-ifab-blue/5 px-3 py-2 text-sm font-medium text-ifab-navy">
+          Azione selezionata: {selectedAction}
         </p>
         <p className="mt-2 text-xs text-ifab-text-muted">
           Campi compilati: {compiled}/{TOTAL_FIELDS}
@@ -336,7 +253,7 @@ export default function UseCaseStep({
           <ArrowLeft size={14} /> Torna alla conversazione
         </button>
         <span className="text-xs text-ifab-text-muted">
-          Serve per aggiungere o cambiare qualcosa raccontandolo, invece di scriverlo campo per campo.
+          Serve per aggiungere o cambiare qualcosa attraverso la conversazione.
         </span>
       </div>
 
@@ -346,21 +263,17 @@ export default function UseCaseStep({
             <h3 className="text-sm font-semibold text-ifab-blue-dark">
               {section.number} · {section.title}
             </h3>
-            <button
-              type="button"
-              onClick={() => askAboutSection(section)}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-ifab-border px-2.5 py-1.5 text-xs font-medium text-ifab-navy transition hover:border-ifab-blue hover:text-ifab-blue"
-            >
-              <HelpCircle size={13} /> Chiedi all&apos;assistente
-            </button>
           </div>
 
           <div className="flex flex-col gap-4">
             {section.fields.map((field) => (
               <div key={field.id}>
                 <label className="mb-1 block text-xs font-medium text-ifab-text-muted">{field.label}</label>
-                {field.hint && <p className="mb-1.5 text-xs text-ifab-text-muted/80">{field.hint}</p>}
-                {renderField(field)}
+                <div className="whitespace-pre-wrap rounded-lg bg-ifab-bg-soft px-3 py-2 text-sm leading-relaxed text-ifab-text">
+                  {isBlock2ValueFilled(values[field.id])
+                    ? block2ValueLabel(field, values[field.id])
+                    : "— Informazione non disponibile / non conosciuta dal partecipante"}
+                </div>
               </div>
             ))}
           </div>

@@ -23,7 +23,7 @@ import AgentChat from "./AgentChat";
 import AssistantPanel from "./AssistantPanel";
 
 /**
- * Step 1 — scheda di attrito: 21 domande sì/no in elenco unico (i blocchi
+ * Step 1 — scheda di attrito: 18 domande sì/no in elenco unico (i blocchi
  * restano interni). Sul sì si aprono nome e barra di impatto, già posizionata
  * al centro della scala; tornando al no il valore viene scartato, perché un
  * impatto senza attrito dichiarato non significa nulla.

@@ -61,18 +61,19 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
     processoContext: context.processoContext ?? "",
     remainingGroups: remaining,
     compiledFieldIds: BLOCK2_FIELDS.filter((f) => isBlock2ValueFilled(values[f.id])).map((f) => f.id),
+    currentValues: values,
   });
 
   const openai = getOpenAI();
   const response = await openai.chat.completions.create({
     model: CHAT_MODEL,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
-    temperature: 0.5,
+    temperature: 0.3,
     response_format: { type: "json_object" },
   });
 
   const raw = (response.choices[0]?.message?.content ?? "").trim();
-  let parsed: { reply?: unknown; fields?: unknown; closed?: unknown } = {};
+  let parsed: { reply?: unknown; fields?: unknown; closed?: unknown; unavailable?: unknown } = {};
   try {
     parsed = JSON.parse(raw) as typeof parsed;
   } catch {
@@ -83,7 +84,29 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
 
   const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : raw;
   const fields = sanitizeInterviewFields(parsed.fields);
-  const closedGroups = sanitizeClosedGroups(parsed.closed, closedBefore);
+  const mergedValues = { ...values, ...fields };
+  const knownFieldIds = new Set(BLOCK2_FIELDS.map((field) => field.id));
+  const unavailable = new Set(
+    Array.isArray(parsed.unavailable)
+      ? parsed.unavailable.filter((id): id is string => typeof id === "string" && knownFieldIds.has(id))
+      : []
+  );
+  const requestedClosed = Array.isArray(parsed.closed)
+    ? parsed.closed.filter((key): key is string => typeof key === "string")
+    : [];
+  const completeClosed = requestedClosed.filter((key) => {
+    const group = remaining.find((candidate) => candidate.key === key);
+    return Boolean(
+      group?.fields.every(
+        (fieldId) =>
+          isBlock2ValueFilled(mergedValues[fieldId]) ||
+          unavailable.has(fieldId) ||
+          fieldId === "obiettiviAltro" ||
+          (fieldId === "eticaCategorie" && mergedValues.eticaDecisioni === "no")
+      )
+    );
+  });
+  const closedGroups = sanitizeClosedGroups(completeClosed, closedBefore);
   const remainingAfter = remainingInterviewGroups(closedGroups);
 
   return NextResponse.json({

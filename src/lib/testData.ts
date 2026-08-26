@@ -10,27 +10,6 @@ import { candidateAttive } from "./frizioneScoring";
 import { CARATTERISTICHE, DOMANDE, DOMANDA_CRITERI_TACITI } from "@/config/block1Frizione";
 import { nowMs } from "./time";
 
-export const TEST_PARTICIPANT_NAMES = [
-  "Mario Rossi (test)",
-  "Elena Bianchi (test)",
-  "Marco Ferri (test)",
-  "Giulia Monti (test)",
-  "Luca Moretti (test)",
-  "Sara Conti (test)",
-  "Davide Rinaldi (test)",
-  "Francesca Neri (test)",
-  "Matteo Riva (test)",
-  "Chiara De Luca (test)",
-];
-
-export function getRandomParticipantName(): string {
-  const idx = Math.floor(Math.random() * TEST_PARTICIPANT_NAMES.length);
-  return TEST_PARTICIPANT_NAMES[idx];
-}
-
-export const TEST_PARTICIPANT_NAME = TEST_PARTICIPANT_NAMES[0];
-export const TEST_FACILITATOR_NAME = "Facilitatore di test";
-
 export type TestScenario = {
   id: string;
   name: string;
@@ -48,11 +27,11 @@ export const TEST_SCENARIOS: TestScenario[] = [
     si: {
       1: { nome: "Registrazione fatture fornitori nell'ERP", impatto: 8.5 },
       6: { nome: "Riconciliazione ordini/bolle/fatture", impatto: 7.0 },
-      13: { nome: "Offerte commerciali su template", impatto: 6.5 },
+      11: { nome: "Preparazione documenti amministrativi ricorrenti", impatto: 6.5 },
       19: { nome: "Check di conformità sui documenti di gara", impatto: 5.0 },
     },
     criteriTaciti: true,
-    step2Overrides: { 1: 5.5, 6: 8.0, 13: 8.0 },
+    step2Overrides: { 1: 5.5, 6: 8.0, 11: 8.0 },
     useCase: {
       problema:
         "Le fatture fornitore arrivano via email in PDF con layout diversi e vengono registrate a mano nell'ERP: due persone dell'amministrazione ricopiano intestazione, righe e centro di costo. Il ciclo di registrazione impiega in media 3 giorni, gli errori di imputazione vengono scoperti a fine mese e obbligano a note di credito e riaperture di periodo.",
@@ -104,10 +83,10 @@ export const TEST_SCENARIOS: TestScenario[] = [
     si: {
       3: { nome: "Triage e categorizzazione urgenza ticket clienti", impatto: 8.5 },
       12: { nome: "Risposte a FAQ ricorrenti in più lingue", impatto: 7.5 },
-      18: { nome: "Smistamento richieste tecniche a reparto competente", impatto: 8.0 },
+      16: { nome: "Sintesi delle richieste tecniche per il reparto competente", impatto: 8.0 },
     },
     criteriTaciti: false,
-    step2Overrides: { 3: 5.0, 18: 8.0, 12: 8.0 },
+    step2Overrides: { 3: 5.0, 16: 8.0, 12: 8.0 },
     useCase: {
       problema:
         "I clienti inviano richieste di supporto eterogenee via portale ed email. Gli operatori spendono oltre il 40% del tempo nella lettura preliminare, classificazione per urgenza e instradamento manuale verso i team tecnici di secondo livello.",
@@ -344,11 +323,11 @@ export const TEST_SCENARIOS: TestScenario[] = [
     name: "Ufficio Legale — Revisione comparativa contratti e NDA",
     si: {
       11: { nome: "Revisione clausole di limitazione responsabilità e penali", impatto: 8.0 },
-      13: { nome: "Generazione bozze contratti standard di compravendita", impatto: 9.0 },
+      12: { nome: "Adattamento di contratti standard per destinatari diversi", impatto: 9.0 },
       14: { nome: "Consultazione repository sentenze e pareri interni pregressi", impatto: 7.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 13: 9.0, 11: 8.5, 14: 8.0 },
+    step2Overrides: { 12: 9.0, 11: 8.5, 14: 8.0 },
     useCase: {
       problema:
         "La verifica e negoziazione dei contratti standard (accordi di riservatezza, forniture, lettere d'intenti) impegna l'80% del tempo dei legali interni, rallentando la firma degli accordi commerciali.",
@@ -393,10 +372,10 @@ export const TEST_SCENARIOS: TestScenario[] = [
     si: {
       1: { nome: "Aggiornamento stati di consegna e codici tracking su portale", impatto: 7.5 },
       6: { nome: "Controllo corrispondenza DDT, packing list e ordini spedizione", impatto: 8.0 },
-      18: { nome: "Scelta del corriere ottimale per peso, volume e tratta", impatto: 7.0 },
+      20: { nome: "Scelta del corriere secondo peso, volume e tratta", impatto: 7.0 },
     },
     criteriTaciti: false,
-    step2Overrides: { 6: 8.0, 1: 5.0, 18: 7.5 },
+    step2Overrides: { 6: 8.0, 1: 5.0, 20: 7.5 },
     useCase: {
       problema:
         "La verifica documentale dei documenti di trasporto (DDT) all'arrivo delle merci in banchina genera colli di bottiglia e lunghe attese per i trasportatori, con frequenti discrepanze riscontrate solo dopo lo scarico.",
@@ -440,11 +419,11 @@ export const TEST_SCENARIOS: TestScenario[] = [
     name: "Marketing — Localizzazione e generazione contenuti multicanale",
     si: {
       12: { nome: "Localizzazione e traduzione schede prodotto per mercati esteri", impatto: 7.5 },
-      13: { nome: "Redazione newsletter e post social secondo il brand tone", impatto: 8.0 },
+      11: { nome: "Redazione newsletter e post social secondo il brand tone", impatto: 8.0 },
       16: { nome: "Sintesi da report di settore per articoli divulgativi sul blog", impatto: 6.5 },
     },
     criteriTaciti: false,
-    step2Overrides: { 13: 8.5, 12: 8.0, 16: 7.5 },
+    step2Overrides: { 11: 8.5, 12: 8.0, 16: 7.5 },
     useCase: {
       problema:
         "Il lancio periodico di nuovi prodotti richiede la redazione di decine di varianti di testo per canali differenti (social media, newsletter, schede ecommerce, comunicati stampa) in italiano, inglese, tedesco e francese.",

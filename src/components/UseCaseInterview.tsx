@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Send, Sparkles } from "lucide-react";
+import { Send, Sparkles } from "lucide-react";
 import {
   BLOCK2_INTERVIEW_GROUPS,
   BLOCK2_INTERVIEW_GROUP_COUNT,
@@ -27,28 +27,25 @@ export type InterviewTurn = {
  */
 export default function UseCaseInterview({
   processoContext,
+  selectedAction,
   values,
   closedGroups,
   chatLog,
-  initialInput,
   onTurn,
   onDone,
-  onOpenScheda,
 }: {
   processoContext: string;
+  selectedAction: string;
   values: Record<string, Block2FieldValue>;
   closedGroups: string[];
   chatLog: ChatMessage[];
-  /** Domanda già scritta nel campo: si arriva così dal "Chiedi all'assistente" della scheda. */
-  initialInput?: string;
   onTurn: (turn: InterviewTurn) => void;
   onDone: () => void;
-  onOpenScheda: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(
     chatLog.length > 0 ? chatLog : [{ role: "assistant", content: INITIAL_MESSAGE_USE_CASE_INTERVIEW }]
   );
-  const [input, setInput] = useState(initialInput ?? "");
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Stato dell'intervista tenuto anche qui: il turno successivo deve partire da
@@ -74,12 +71,6 @@ export default function UseCaseInterview({
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [messages, loading]);
-
-  // Si arriva qui anche dalla scheda, con una domanda già scritta: il campo va
-  // messo a fuoco, altrimenti la domanda passa inosservata in fondo alla pagina.
-  useEffect(() => {
-    if (initialInput) inputRef.current?.focus();
-  }, [initialInput]);
 
   async function handleSend(e?: React.FormEvent) {
     e?.preventDefault();
@@ -136,7 +127,10 @@ export default function UseCaseInterview({
         <h2 className="mb-1 text-lg font-semibold text-ifab-navy">Step 4 · Il tuo caso d&apos;uso</h2>
         <p className="text-sm text-ifab-text-muted">
           Non c&apos;è un modulo da compilare: raccontalo all&apos;assistente, a voce o scrivendo. Alla fine ti
-          mostra la scheda già compilata da confermare o correggere.
+          mostra la scheda già compilata da confermare.
+        </p>
+        <p className="mt-3 rounded-lg border border-ifab-blue/30 bg-ifab-blue/5 px-3 py-2 text-sm font-medium text-ifab-navy">
+          Azione selezionata: {selectedAction}
         </p>
       </section>
 
@@ -243,18 +237,9 @@ export default function UseCaseInterview({
         </form>
       </section>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={onOpenScheda}
-          className="flex items-center gap-2 rounded-lg border border-ifab-navy px-4 py-2 text-sm font-semibold text-ifab-navy transition hover:bg-ifab-navy hover:text-white"
-        >
-          Vai alla scheda <ArrowRight size={15} />
-        </button>
-        <span className="text-xs text-ifab-text-muted">
-          Puoi passare alla scheda quando vuoi: quello che manca lo completi a mano, o torni qui a parlarne.
-        </span>
-      </div>
+      <p className="text-xs text-ifab-text-muted">
+        La scheda verrà generata automaticamente quando l&apos;assistente avrà raccolto informazioni sufficienti.
+      </p>
     </div>
   );
 }

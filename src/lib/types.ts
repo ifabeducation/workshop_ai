@@ -1,6 +1,6 @@
 // Tipi condivisi per il modello dati del workshop.
 // Blocco 1 — Scheda di attrito, in 3 step:
-//   1. 21 domande sì/no; su ogni sì, impatto 1-10 (e nome dell'attività)
+//   1. 18 domande sì/no; su ogni sì, impatto 1-10 (e nome dell'attività)
 //   2. per le 3 candidate a impatto più alto, una caratteristica 1-10
 //   3. esito calcolato: prontezza, punteggio, tecnologia, supervisione, matrice
 // Step 4 — Use Case: intervista con l'agente e scheda da confermare (Blocco 2).
@@ -56,7 +56,7 @@ export type Step1Answer = {
 
 export type Step1Submission = {
   risposte?: Record<string, Step1Answer>; // chiave: id domanda come stringa
-  /** Domanda 21: le eccezioni si gestiscono con criteri non documentati. */
+  /** Valore storico della precedente domanda 21, mantenuto per compatibilità. */
   criteriTaciti?: boolean;
   chatLog?: ChatMessage[];
   updatedAt?: number; // ultimo salvataggio automatico della bozza
@@ -72,9 +72,25 @@ export type Step1Submission = {
 export type Step2Submission = {
   valori?: Record<string, number>; // chiave: id domanda come stringa
   candidate?: number[];
+  /** Decisione presa nello Step 3, distinta dalla raccomandazione calcolata. */
+  step3Decision?: Step3Decision;
   chatLog?: ChatMessage[];
   updatedAt?: number;
   completedAt?: number; // dopo la conclusione gli slider non sono più modificabili
+};
+
+export type Step3CandidateDecision = {
+  domandaId: number;
+  nome: string;
+  punteggio: number;
+};
+
+export type Step3Decision = {
+  recommended: Step3CandidateDecision;
+  selected: Step3CandidateDecision;
+  /** Vero solo quando il partecipante conferma consapevolmente una scelta diversa. */
+  nonOptimalConfirmed: boolean;
+  selectedAt: number;
 };
 
 /**
@@ -83,8 +99,8 @@ export type Step2Submission = {
  * e qui si conservano i valori indicizzati per id di campo, così aggiornare il
  * template non richiede modifiche al modello dati né alle API.
  *
- * I valori arrivano dall'intervista dell'agente (`chatLog`) e restano
- * modificabili a mano nella scheda di conferma. `closedGroups` sono gli
+ * I valori arrivano esclusivamente dall'intervista dell'agente (`chatLog`).
+ * `closedGroups` sono gli
  * argomenti dell'intervista già affrontati: sono loro, non il conteggio dei
  * campi, a dire quanto manca (un argomento si chiude anche se il partecipante
  * non sa rispondere). `interviewDone` distingue "sto ancora parlando" da "sono
@@ -131,4 +147,3 @@ export type SessionSummary = {
   participantCount: number;
   lastActivityAt: number;
 };
-

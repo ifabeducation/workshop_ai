@@ -10,7 +10,7 @@ import {
   block2ValueLabel,
   isBlock2ValueFilled,
 } from "@/config/block2Form";
-import { Block2FieldValue } from "./types";
+import { Block2FieldValue, ChatMessage, Step3Decision } from "./types";
 
 const MARGIN = 48;
 const LINE = 14;
@@ -19,6 +19,14 @@ export type UseCasePdfInput = {
   participantName: string;
   code: string;
   values: Record<string, Block2FieldValue>;
+  chatLog?: ChatMessage[];
+  decision?: Step3Decision;
+  candidates?: Array<{
+    nome: string;
+    punteggio: number;
+    impatto: number;
+    prontezza: number;
+  }>;
   /** Momento dell'esportazione, in millisecondi. */
   now: number;
 };
@@ -32,6 +40,9 @@ export async function downloadUseCasePdf({
   participantName,
   code,
   values,
+  chatLog = [],
+  decision,
+  candidates = [],
   now,
 }: UseCasePdfInput): Promise<void> {
   const { default: jsPDF } = await import("jspdf");
@@ -73,6 +84,57 @@ export async function downloadUseCasePdf({
     })}`,
     { size: 9, style: "normal", gap: 10 }
   );
+
+  ensureSpace(LINE * 4);
+  pdf.setDrawColor(200);
+  pdf.line(MARGIN, y - 6, pageWidth - MARGIN, y - 6);
+  write("Decisione dello Step 3", { size: 12, style: "bold", gap: 3 });
+  if (decision) {
+    write(
+      `Opzione con valore più alto: ${decision.recommended.nome} (${decision.recommended.punteggio.toFixed(1)}/100)`,
+      { size: 10, style: "normal", gap: 2 }
+    );
+    write(
+      `Scelta del partecipante: ${decision.selected.nome} (${decision.selected.punteggio.toFixed(1)}/100)`,
+      { size: 10, style: "bold", gap: 2 }
+    );
+    write(
+      decision.selected.domandaId === decision.recommended.domandaId
+        ? "Il partecipante ha seguito la raccomandazione del sistema."
+        : `Il partecipante ha scelto un'opzione diversa${
+            decision.nonOptimalConfirmed ? " e ha confermato di voler procedere" : ""
+          }.`,
+      { size: 9, style: "normal", gap: 6 }
+    );
+  } else {
+    write("Scelta del partecipante non ancora registrata.", { size: 10, style: "normal", gap: 6 });
+  }
+
+  if (candidates.length > 0) {
+    write("Tre opzioni valutate", { size: 9, style: "bold", gap: 2 });
+    for (const candidate of candidates) {
+      write(
+        `${candidate.nome}: ${candidate.punteggio.toFixed(1)}/100 · impatto ${candidate.impatto.toFixed(1)}/10 · prontezza ${candidate.prontezza.toFixed(1)}/10`,
+        { size: 9, style: "normal", gap: 2 }
+      );
+    }
+    y += 6;
+  }
+
+  if (chatLog.length > 0) {
+    ensureSpace(LINE * 4);
+    pdf.setDrawColor(200);
+    pdf.line(MARGIN, y - 6, pageWidth - MARGIN, y - 6);
+    write("Conversazione completa dello Step 4", { size: 12, style: "bold", gap: 3 });
+    for (const message of chatLog) {
+      write(message.role === "user" ? "Partecipante" : "Assistente AI", {
+        size: 8.5,
+        style: "bold",
+      });
+      write(message.content, { size: 9.5, style: "normal", gap: 6 });
+    }
+    y += 4;
+  }
 
   for (const section of BLOCK2_SECTIONS) {
     // Il titolo di sezione non deve restare orfano in fondo alla pagina.
