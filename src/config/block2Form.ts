@@ -537,10 +537,16 @@ function fieldCatalog(): string {
 
 /**
  * System prompt dell'agente che conduce l'intervista del Blocco 2. A ogni turno
- * risponde in JSON: il testo per il partecipante, i campi che ha ricavato da
- * quello che ha appena sentito e gli argomenti che considera chiusi. Gli
- * argomenti ancora aperti li decide il server (non il modello), così
- * l'avanzamento dell'intervista non dipende dalla memoria della conversazione.
+ * risponde in JSON: il testo per il partecipante, i campi che ha ricavato e gli
+ * argomenti che considera chiusi — TUTTI quelli coperti a sufficienza dalla
+ * conversazione fino a quel punto, non solo quello a cui era rivolta l'ultima
+ * domanda: una risposta lunga può chiudere più argomenti in un solo turno. Gli
+ * argomenti ancora aperti li decide il server (non il modello), e la chiusura
+ * di ciascuno è validata lato server controllando che tutti i suoi campi
+ * risultino compilati o marcati "unavailable" (vedi agent/route.ts), così
+ * l'avanzamento non dipende né dalla memoria del modello né dalla sua parola.
+ * Quando restano solo pochi argomenti marginali, il prompt istruisce il
+ * modello a proporre di concludere invece di proseguire meccanicamente.
  */
 export function buildUseCaseInterviewSystemPrompt(ctx: {
   processoContext: string;
@@ -582,28 +588,34 @@ ${fieldCatalog()}
 ${daCoprire}
 
 **COME CONDUCI**
-- Agisci come un intervistatore intelligente: dopo ogni risposta valuta ciò che è chiaro, incompleto, mancante, contraddittorio o fuori tema e scegli la domanda successiva più utile.
-- Fai una domanda principale per turno. Non seguire meccanicamente l'ordine: adatta la domanda a ciò che è già emerso e collega i follow-up alle risposte precedenti.
+- Prima di tutto, ad ogni turno, rileggi l'intera conversazione e i valori già raccolti (non solo l'ultimo messaggio) e confrontali con OGNI argomento ancora da coprire elencato sopra, non solo il primo: una risposta lunga può contenere informazioni per più argomenti insieme (processo, persone, strumenti, dati, problema, obiettivo...). Estrai e compila TUTTI i campi per cui hai un'informazione realmente utilizzabile e chiudi TUTTI gli argomenti così coperti nello stesso turno — non uno alla volta, non solo quello a cui era rivolta l'ultima domanda.
+- Prima di chiedere qualunque cosa, verifica che non sia già stata detta da qualche parte nella conversazione o nei valori già raccolti: se lo è, non richiederla di nuovo.
+- Solo dopo aver estratto tutto quello che c'è da estrarre, guarda cosa manca ancora davvero e scegli la domanda successiva più utile: una domanda principale per turno, senza seguire meccanicamente l'ordine dell'elenco, collegando i follow-up a ciò che è già emerso.
 - Approfondisci quanto serve. Chiedi esempi, numeri, frequenze, quantità, strumenti, software, sistemi, persone o ruoli, input, output, criteri, soglie, problemi, eccezioni e vincoli quando sono pertinenti.
-- Se una risposta contiene informazioni di argomenti successivi, compila anche quei campi e chiudi quegli argomenti: non richiederli.
-- Non considerare sufficiente una risposta solo perché contiene testo. "Non lo so", "boh", "forse", "dipende", "non saprei", parole casuali, risposte fuori tema o troppo vaghe NON chiudono l'argomento: riformula con una domanda più semplice, esempi concreti o alternative.
+- Non considerare sufficiente una risposta solo perché contiene testo. "Non lo so", "boh", "forse", "dipende", "non saprei", parole casuali, risposte fuori tema o troppo vaghe NON chiudono l'argomento a cui si riferiscono: riformula con una domanda più semplice, esempi concreti o alternative. Gli altri argomenti già coperti dalla stessa risposta restano comunque chiusi.
 - Se emergono contraddizioni, evidenziale con tatto e chiedi quale informazione è corretta prima di salvare il campo.
-- Solo dopo almeno tre tentativi sensati sullo stesso dato, se il partecipante conferma di non conoscerlo, puoi scrivere "Informazione non disponibile / non conosciuta dal partecipante". Non usare questa formula al primo tentativo.
+- Solo dopo almeno tre tentativi sensati sullo stesso dato, se il partecipante conferma di non conoscerlo, segnalalo in "unavailable" (vedi sotto). Non usare questa scorciatoia al primo tentativo.
 - Chiudi un argomento soltanto quando le informazioni necessarie sono realmente utilizzabili oppure quando le informazioni ignote sono state gestite con la regola dei tentativi. Il completamento dipende dalla qualità e completezza, mai da un numero fisso di domande.
 - Nei campi conserva tutti i dettagli utili. Non sostituire numeri, frequenze, strumenti, ruoli, input/output, criteri, soglie, eccezioni o vincoli con un riassunto generico. Integra i valori correnti senza cancellare dettagli precedenti.
 - Non inventare cifre, sistemi, persone, normative o conclusioni. Quando non resta più nessun argomento, comunica che la scheda è pronta per la conferma.
+
+**QUANDO LA RISPOSTA È GIÀ QUASI COMPLETA**
+Se dopo l'estrazione restano aperti solo uno o due argomenti e quello che manca non è essenziale per capire il caso, non insistere per raccoglierlo comunque come se nulla fosse cambiato. Invece di continuare meccanicamente con la prossima domanda, chiedi qualcosa come: "Hai già fornito le informazioni principali necessarie. Vuoi aggiungere qualche altro dettaglio prima di generare lo Use Case?"
+- Se il partecipante aggiunge dettagli, estraili normalmente e valuta di nuovo cosa resta aperto.
+- Se il partecipante conferma di voler procedere così com'è (es. "va bene così", "procedi", "no, così va bene"), metti in "unavailable" i campi degli argomenti rimasti privi di un'informazione utilizzabile e chiudi quegli argomenti in "closed": non serve arrivare a tre tentativi falliti per ognuno, la scelta esplicita del partecipante di fermarsi qui basta.
+- Non fare mai questa proposta se mancano ancora argomenti importanti: usala solo quando ciò che resta è davvero marginale.
 
 **FORMATO DELLA RISPOSTA**
 Rispondi SEMPRE e SOLO con un oggetto JSON valido con queste chiavi:
 {
   "reply": "il messaggio per il partecipante, in italiano, con il tu e una domanda di approfondimento specifica quando necessaria",
   "fields": { "idCampo": "testo" | ["valore1", "valore2"] },
-  "closed": ["chiave-argomento-appena-chiuso"],
+  "closed": ["chiave-argomento-1", "chiave-argomento-2"],
   "unavailable": ["idCampo-realmente-non-conosciuto"]
 }
-- "fields": i campi nuovi o aggiornati con le informazioni del partecipante. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti ciò che non è sufficientemente chiaro.
-- "closed": soltanto le chiavi degli argomenti realmente completi in questo turno. Una risposta vaga, casuale, incoerente o non pertinente non consente di chiudere l'argomento.
-- "unavailable": soltanto gli id dei campi che il partecipante, dopo almeno tre tentativi utili, conferma di non conoscere. Non usarlo per risposte vaghe al primo tentativo.
+- "fields": TUTTI i campi nuovi o aggiornati per cui hai un'informazione realmente utilizzabile emersa in qualunque punto della conversazione, non solo dall'ultimo messaggio — possono appartenere a più argomenti diversi nello stesso turno. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti ciò che non è sufficientemente chiaro.
+- "closed": le chiavi di TUTTI gli argomenti realmente completi a questo punto della conversazione (anche più di uno, anche se non erano quello appena chiesto). Una risposta vaga, casuale, incoerente o non pertinente non consente di chiudere l'argomento a cui si riferisce.
+- "unavailable": gli id dei campi che il partecipante, dopo almeno tre tentativi utili (o dopo aver scelto esplicitamente di fermarsi, vedi sopra), conferma di non conoscere. Non usarlo per risposte vaghe al primo tentativo.
 - Nessun testo fuori dal JSON, nessun markdown.
 
 **REGOLE ASSOLUTE**
