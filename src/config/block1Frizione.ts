@@ -4,7 +4,7 @@
 // Step 3: esito calcolato (vedi lib/frizioneScoring.ts).
 // Tutto il contenuto testuale sta qui: domande, ancoraggi, tecnologie, messaggi.
 
-import { FrizioneBlocco } from "@/lib/types";
+import type { FrizioneBlocco } from "@/lib/types";
 
 export type BloccoConfig = {
   key: FrizioneBlocco;

@@ -316,12 +316,12 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                 <thead>
                   <tr className="border-b border-ifab-border text-ifab-text-muted">
                     <th className="py-2 pr-4">Nome</th>
+                    <th className="py-2 pr-4">Step 4 / autorizzazione</th>
                     <th className="py-2 pr-4">Step 1</th>
                     <th className="py-2 pr-4">Step 2</th>
                     <th className="py-2 pr-4">Opzione con valore più alto</th>
                     <th className="py-2 pr-4">Scelta del partecipante</th>
                     <th className="py-2 pr-4">Decisione</th>
-                    <th className="py-2 pr-4">Use Case</th>
                     <th className="py-2 pr-4">Scheda</th>
                   </tr>
                 </thead>
@@ -382,6 +382,37 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                             </span>
                           )}
                         </td>
+                        <td className="min-w-64 py-2 pr-4">
+                          <div className="flex flex-col items-start gap-1.5">
+                            <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${step4StatusClass}`}>
+                              {step4Status}
+                            </span>
+                            <span className="text-[11px] text-ifab-text-muted">Campi: {useCaseLabel}</span>
+                            {!submission.block2?.completedAt && !naturallyComplete && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleUseCaseAuthorization(
+                                    participant.participantId,
+                                    !facilitatorAuthorized
+                                  )
+                                }
+                                disabled={authorizationFor === participant.participantId}
+                                className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
+                                  facilitatorAuthorized
+                                    ? "border-red-200 text-red-700 hover:bg-red-50"
+                                    : "border-ifab-blue bg-ifab-blue/5 text-ifab-blue hover:bg-ifab-blue hover:text-white"
+                                }`}
+                              >
+                                {authorizationFor === participant.participantId
+                                  ? "Aggiornamento..."
+                                  : facilitatorAuthorized
+                                    ? "Revoca autorizzazione"
+                                    : "Autorizza accesso allo Use Case"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-2 pr-4">
                           {submission.step1?.completedAt
                             ? `✅ ${siDichiarati} sì`
@@ -416,37 +447,6 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                                 ? "Scelta diversa confermata"
                                 : "Da confermare"
                             : "—"}
-                        </td>
-                        <td className="min-w-56 py-2 pr-4">
-                          <div className="flex flex-col items-start gap-1.5">
-                            <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${step4StatusClass}`}>
-                              {step4Status}
-                            </span>
-                            <span className="text-[11px] text-ifab-text-muted">Campi: {useCaseLabel}</span>
-                            {!submission.block2?.completedAt && !naturallyComplete && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handleUseCaseAuthorization(
-                                    participant.participantId,
-                                    !facilitatorAuthorized
-                                  )
-                                }
-                                disabled={authorizationFor === participant.participantId}
-                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
-                                  facilitatorAuthorized
-                                    ? "border-red-200 text-red-700 hover:bg-red-50"
-                                    : "border-ifab-blue text-ifab-blue hover:bg-ifab-blue hover:text-white"
-                                }`}
-                              >
-                                {authorizationFor === participant.participantId
-                                  ? "Aggiornamento..."
-                                  : facilitatorAuthorized
-                                    ? "Revoca autorizzazione"
-                                    : "Autorizza accesso allo Use Case"}
-                              </button>
-                            )}
-                          </div>
                         </td>
                         <td className="py-2 pr-4">
                           {useCaseFilled > 0 ? (

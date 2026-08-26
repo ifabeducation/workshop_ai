@@ -4,7 +4,7 @@
 // Come per il Blocco 1, il contenuto sta tutto qui: form, prompt dell'agente e
 // argomenti dell'intervista si generano da questa configurazione.
 
-import { Block2FieldValue } from "@/lib/types";
+import type { Block2FieldValue } from "@/lib/types";
 
 export const BLOCK2_COMPLETION_HINT =
   "Non esiste una risposta perfetta: annota quello che sai oggi e segnala esplicitamente ciò che va ancora verificato.";
@@ -344,6 +344,47 @@ export function isBlock2ValueFilled(value: Block2FieldValue | undefined): value 
   return Boolean(value && value.trim());
 }
 
+/** Integra un turno senza perdere dettagli gia' raccolti in precedenza. */
+export function mergeInterviewValues(
+  current: Record<string, Block2FieldValue>,
+  extracted: Record<string, Block2FieldValue>
+): Record<string, Block2FieldValue> {
+  const merged = { ...current };
+
+  for (const [id, nextValue] of Object.entries(extracted)) {
+    const field = block2FieldById(id);
+    const previousValue = merged[id];
+    if (!field || !isBlock2ValueFilled(nextValue)) continue;
+
+    if (field.type === "checkbox") {
+      const previous = Array.isArray(previousValue) ? previousValue : [];
+      const next = Array.isArray(nextValue) ? nextValue : [nextValue];
+      merged[id] = Array.from(new Set([...previous, ...next]));
+      continue;
+    }
+
+    if (field.type === "radio" || !isBlock2ValueFilled(previousValue)) {
+      merged[id] = nextValue;
+      continue;
+    }
+
+    const previousText = Array.isArray(previousValue) ? previousValue.join(", ") : previousValue;
+    const nextText = Array.isArray(nextValue) ? nextValue.join(", ") : nextValue;
+    const previousComparable = previousText.trim().toLocaleLowerCase("it");
+    const nextComparable = nextText.trim().toLocaleLowerCase("it");
+
+    if (nextComparable.includes(previousComparable)) {
+      merged[id] = nextText;
+    } else if (previousComparable.includes(nextComparable)) {
+      merged[id] = previousText;
+    } else {
+      merged[id] = `${previousText.trim()}\n\n${nextText.trim()}`;
+    }
+  }
+
+  return merged;
+}
+
 /** Etichetta leggibile di un valore: le opzioni si mostrano col loro testo, non col codice. */
 export function block2ValueLabel(field: Block2Field, value: Block2FieldValue | undefined): string {
   if (!isBlock2ValueFilled(value)) return "";
@@ -457,6 +498,34 @@ export const BLOCK2_INTERVIEW_GROUP_COUNT = BLOCK2_INTERVIEW_GROUPS.length;
 export function remainingInterviewGroups(closedGroups?: string[]): Block2InterviewGroup[] {
   const closed = new Set(closedGroups ?? []);
   return BLOCK2_INTERVIEW_GROUPS.filter((g) => !closed.has(g.key));
+}
+
+/**
+ * Calcola gli argomenti completi dai campi realmente raccolti. La barra non
+ * dipende dal numero di domande ne' da un flag facoltativo restituito dal modello.
+ */
+export function completedInterviewGroupKeys(
+  values: Record<string, Block2FieldValue>,
+  unavailableFieldIds: Iterable<string> = [],
+  groups: Block2InterviewGroup[] = BLOCK2_INTERVIEW_GROUPS
+): string[] {
+  const unavailable = new Set(unavailableFieldIds);
+  const isRequired = (fieldId: string): boolean => {
+    if (fieldId === "obiettiviAltro") {
+      return Array.isArray(values.obiettivi) && values.obiettivi.includes("altro");
+    }
+    if (fieldId === "eticaCategorie") return values.eticaDecisioni !== "no";
+    return true;
+  };
+
+  return groups
+    .filter((group) =>
+      group.fields.every(
+        (fieldId) =>
+          !isRequired(fieldId) || isBlock2ValueFilled(values[fieldId]) || unavailable.has(fieldId)
+      )
+    )
+    .map((group) => group.key);
 }
 
 /** Tiene solo chiavi di argomento esistenti (l'agente potrebbe inventarne). */
@@ -582,16 +651,20 @@ ${fieldCatalog()}
 ${daCoprire}
 
 **COME CONDUCI**
+- Dopo OGNI messaggio dell'utente rileggi l'intera conversazione e confronta la nuova risposta con TUTTI i campi di TUTTI gli argomenti ancora aperti, non soltanto con la domanda appena fatta.
+- Estrai nello stesso turno ogni informazione pertinente: una singola risposta può completare uno, molti o quasi tutti gli argomenti. Restituisci tutti i campi riconosciuti e tutte le relative chiavi in "closed".
 - Agisci come un intervistatore intelligente: dopo ogni risposta valuta ciò che è chiaro, incompleto, mancante, contraddittorio o fuori tema e scegli la domanda successiva più utile.
 - Fai una domanda principale per turno. Non seguire meccanicamente l'ordine: adatta la domanda a ciò che è già emerso e collega i follow-up alle risposte precedenti.
 - Approfondisci quanto serve. Chiedi esempi, numeri, frequenze, quantità, strumenti, software, sistemi, persone o ruoli, input, output, criteri, soglie, problemi, eccezioni e vincoli quando sono pertinenti.
 - Se una risposta contiene informazioni di argomenti successivi, compila anche quei campi e chiudi quegli argomenti: non richiederli.
+- Prima di formulare un follow-up controlla i valori correnti e tutta la conversazione: non chiedere mai di nuovo persone, processo, strumenti, dati, input/output, problemi, obiettivi o altri elementi già forniti spontaneamente.
 - Non considerare sufficiente una risposta solo perché contiene testo. "Non lo so", "boh", "forse", "dipende", "non saprei", parole casuali, risposte fuori tema o troppo vaghe NON chiudono l'argomento: riformula con una domanda più semplice, esempi concreti o alternative.
 - Se emergono contraddizioni, evidenziale con tatto e chiedi quale informazione è corretta prima di salvare il campo.
 - Solo dopo almeno tre tentativi sensati sullo stesso dato, se il partecipante conferma di non conoscerlo, puoi scrivere "Informazione non disponibile / non conosciuta dal partecipante". Non usare questa formula al primo tentativo.
 - Chiudi un argomento soltanto quando le informazioni necessarie sono realmente utilizzabili oppure quando le informazioni ignote sono state gestite con la regola dei tentativi. Il completamento dipende dalla qualità e completezza, mai da un numero fisso di domande.
 - Nei campi conserva tutti i dettagli utili. Non sostituire numeri, frequenze, strumenti, ruoli, input/output, criteri, soglie, eccezioni o vincoli con un riassunto generico. Integra i valori correnti senza cancellare dettagli precedenti.
 - Non inventare cifre, sistemi, persone, normative o conclusioni. Quando non resta più nessun argomento, comunica che la scheda è pronta per la conferma.
+- Se la risposta ha già coperto tutte le informazioni importanti, non continuare per raggiungere un numero artificiale di domande: rispondi "Hai già fornito le informazioni principali necessarie. Puoi procedere allo Use Case oppure aggiungere un altro dettaglio.".
 
 **FORMATO DELLA RISPOSTA**
 Rispondi SEMPRE e SOLO con un oggetto JSON valido con queste chiavi:

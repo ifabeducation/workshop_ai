@@ -4,7 +4,9 @@ import { buildStep1SystemPrompt, buildStep2SystemPrompt } from "@/config/block1F
 import {
   BLOCK2_FIELDS,
   buildUseCaseInterviewSystemPrompt,
+  completedInterviewGroupKeys,
   isBlock2ValueFilled,
+  mergeInterviewValues,
   remainingInterviewGroups,
   sanitizeClosedGroups,
   sanitizeInterviewFields,
@@ -73,7 +75,13 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   });
 
   const raw = (response.choices[0]?.message?.content ?? "").trim();
-  let parsed: { reply?: unknown; fields?: unknown; closed?: unknown; unavailable?: unknown } = {};
+  let parsed: {
+    reply?: unknown;
+    fields?: unknown;
+    closed?: unknown;
+    closedGroups?: unknown;
+    unavailable?: unknown;
+  } = {};
   try {
     parsed = JSON.parse(raw) as typeof parsed;
   } catch {
@@ -83,29 +91,32 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   }
 
   const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : raw;
-  const fields = sanitizeInterviewFields(parsed.fields);
-  const mergedValues = { ...values, ...fields };
+  const extractedFields = sanitizeInterviewFields(parsed.fields);
   const knownFieldIds = new Set(BLOCK2_FIELDS.map((field) => field.id));
   const unavailable = new Set(
     Array.isArray(parsed.unavailable)
       ? parsed.unavailable.filter((id): id is string => typeof id === "string" && knownFieldIds.has(id))
       : []
   );
-  const requestedClosed = Array.isArray(parsed.closed)
-    ? parsed.closed.filter((key): key is string => typeof key === "string")
-    : [];
-  const completeClosed = requestedClosed.filter((key) => {
-    const group = remaining.find((candidate) => candidate.key === key);
-    return Boolean(
-      group?.fields.every(
-        (fieldId) =>
-          isBlock2ValueFilled(mergedValues[fieldId]) ||
-          unavailable.has(fieldId) ||
-          fieldId === "obiettiviAltro" ||
-          (fieldId === "eticaCategorie" && mergedValues.eticaDecisioni === "no")
-      )
-    );
+  const unavailableTextFields = Object.fromEntries(
+    [...unavailable]
+      .filter((id) => {
+        const field = BLOCK2_FIELDS.find((candidate) => candidate.id === id);
+        return field?.type === "text" || field?.type === "textarea";
+      })
+      .map((id) => [id, "Informazione non disponibile / non conosciuta dal partecipante"])
+  );
+  const mergedValues = mergeInterviewValues(values, {
+    ...extractedFields,
+    ...unavailableTextFields,
   });
+  const fields = Object.fromEntries(
+    [...new Set([...Object.keys(extractedFields), ...Object.keys(unavailableTextFields)])].map((id) => [
+      id,
+      mergedValues[id],
+    ])
+  );
+  const completeClosed = completedInterviewGroupKeys(mergedValues, unavailable, remaining);
   const closedGroups = sanitizeClosedGroups(completeClosed, closedBefore);
   const remainingAfter = remainingInterviewGroups(closedGroups);
 

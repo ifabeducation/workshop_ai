@@ -101,7 +101,12 @@ export default function UseCaseInterview({
       const data = await res.json();
 
       if (data.error) {
-        setMessages([...nextMessages, { role: "assistant", content: `Si è verificato un errore: ${data.error}` }]);
+        const erroredMessages: ChatMessage[] = [
+          ...nextMessages,
+          { role: "assistant", content: `Si è verificato un errore: ${data.error}` },
+        ];
+        setMessages(erroredMessages);
+        onTurn({ chatLog: erroredMessages, fields: {}, closedGroups: closed });
         return;
       }
 
@@ -118,8 +123,14 @@ export default function UseCaseInterview({
 
       if (data.done) onDone();
     } catch {
-      setError("Errore di connessione: riprova a inviare la risposta.");
-      setMessages(nextMessages);
+      const connectionMessage: ChatMessage = {
+        role: "assistant",
+        content: "Errore di connessione: riprova a inviare la risposta.",
+      };
+      const erroredMessages = [...nextMessages, connectionMessage];
+      setError(connectionMessage.content);
+      setMessages(erroredMessages);
+      onTurn({ chatLog: erroredMessages, fields: {}, closedGroups: closed });
     } finally {
       setLoading(false);
     }

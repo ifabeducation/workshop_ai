@@ -87,6 +87,36 @@ end
 return 0
 `;
 
+// La submission dello Step 4 puo' essere aggiornata contemporaneamente dal
+// partecipante (chat/autosalvataggio) e dal facilitatore (autorizzazione). Il
+// merge dentro Redis impedisce che una delle due scritture cancelli l'altra.
+const MERGE_BLOCK2_SUBMISSION_SCRIPT = `
+local raw = redis.call("GET", KEYS[1])
+local current = { participantId = ARGV[1] }
+if raw then
+  current = cjson.decode(raw)
+end
+
+local patch = cjson.decode(ARGV[2])
+local block2 = current.block2 or {}
+for key, value in pairs(patch) do
+  if key == "values" then
+    local values = block2.values or {}
+    for fieldId, fieldValue in pairs(value) do
+      values[fieldId] = fieldValue
+    end
+    block2.values = values
+  else
+    block2[key] = value
+  end
+end
+
+current.block2 = block2
+local encoded = cjson.encode(current)
+redis.call("SET", KEYS[1], encoded, "EX", ARGV[3])
+return encoded
+`;
+
 async function addToSessionIndex(code: string): Promise<void> {
   const redis = getRedis();
   const codes = (await redis.get<string[]>(keySessionIndex())) ?? [];
@@ -330,14 +360,12 @@ export async function saveBlock2(
   data: Block2Submission
 ): Promise<Submission> {
   const redis = getRedis();
-  const current = await getSubmission(code, participantId);
-  current.block2 = {
-    ...current.block2,
-    ...data,
-    values: { ...current.block2?.values, ...data.values },
-  };
-  await redis.set(keySubmission(code, participantId), current, { ex: SESSION_TTL_SECONDS });
-  return current;
+  const raw = (await redis.eval(
+    MERGE_BLOCK2_SUBMISSION_SCRIPT,
+    [keySubmission(code, participantId)],
+    [participantId, JSON.stringify(data), SESSION_TTL_SECONDS]
+  )) as string;
+  return JSON.parse(raw) as Submission;
 }
 
 /** Memorizza lo step su cui il partecipante stava lavorando (vedi ParticipantProgress). */
