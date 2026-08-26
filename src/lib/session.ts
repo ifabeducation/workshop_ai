@@ -37,6 +37,56 @@ function keySessionIndex() {
 // il tetto serve solo a evitare che la chiave cresca senza limite.
 const SESSION_INDEX_MAX = 50;
 
+// La lista dei partecipanti resta nello stesso formato JSON già usato
+// dall'applicazione, ma ingresso/rientro e heartbeat vengono aggiornati dentro
+// Redis in un'unica operazione atomica. In questo modo due richieste concorrenti
+// non possono più leggere la stessa lista e sovrascriversi a vicenda.
+const JOIN_OR_RESUME_PARTICIPANT_SCRIPT = `
+local raw = redis.call("GET", KEYS[1])
+local participants = {}
+if raw then
+  participants = cjson.decode(raw)
+end
+
+for _, participant in ipairs(participants) do
+  if participant.normalizedName == ARGV[1] then
+    participant.lastSeenAt = tonumber(ARGV[2])
+    redis.call("SET", KEYS[1], cjson.encode(participants), "EX", ARGV[5])
+    return { participant.participantId, participant.name, participant.normalizedName,
+      tostring(participant.joinedAt), tostring(participant.lastSeenAt), "0" }
+  end
+end
+
+local participant = {
+  participantId = ARGV[3],
+  name = ARGV[4],
+  normalizedName = ARGV[1],
+  joinedAt = tonumber(ARGV[2]),
+  lastSeenAt = tonumber(ARGV[2])
+}
+table.insert(participants, participant)
+redis.call("SET", KEYS[1], cjson.encode(participants), "EX", ARGV[5])
+return { participant.participantId, participant.name, participant.normalizedName,
+  tostring(participant.joinedAt), tostring(participant.lastSeenAt), "1" }
+`;
+
+const TOUCH_PARTICIPANT_SCRIPT = `
+local raw = redis.call("GET", KEYS[1])
+if not raw then
+  return 0
+end
+
+local participants = cjson.decode(raw)
+for _, participant in ipairs(participants) do
+  if participant.participantId == ARGV[1] then
+    participant.lastSeenAt = tonumber(ARGV[2])
+    redis.call("SET", KEYS[1], cjson.encode(participants), "EX", ARGV[3])
+    return 1
+  end
+end
+return 0
+`;
+
 async function addToSessionIndex(code: string): Promise<void> {
   const redis = getRedis();
   const codes = (await redis.get<string[]>(keySessionIndex())) ?? [];
@@ -170,27 +220,23 @@ export async function joinOrResumeParticipant(
 ): Promise<{ participant: Participant; isNew: boolean }> {
   const redis = getRedis();
   const normalized = normalizeName(displayName);
-  const participants = await getParticipants(code);
-
-  const existing = participants.find((p) => p.normalizedName === normalized);
   const now = Date.now();
-
-  if (existing) {
-    existing.lastSeenAt = now;
-    await redis.set(keyParticipants(code), participants, { ex: SESSION_TTL_SECONDS });
-    return { participant: existing, isNew: false };
-  }
-
-  const participant: Participant = {
-    participantId: nanoid(10),
-    name: displayName.trim(),
-    normalizedName: normalized,
-    joinedAt: now,
-    lastSeenAt: now,
+  const result = (await redis.eval(
+    JOIN_OR_RESUME_PARTICIPANT_SCRIPT,
+    [keyParticipants(code)],
+    [normalized, now, nanoid(10), displayName.trim(), SESSION_TTL_SECONDS]
+  )) as Array<string | number>;
+  const [participantId, name, normalizedName, joinedAt, lastSeenAt, isNew] = result;
+  return {
+    participant: {
+      participantId: String(participantId),
+      name: String(name),
+      normalizedName: String(normalizedName),
+      joinedAt: Number(joinedAt),
+      lastSeenAt: Number(lastSeenAt),
+    },
+    isNew: String(isNew) === "1",
   };
-  participants.push(participant);
-  await redis.set(keyParticipants(code), participants, { ex: SESSION_TTL_SECONDS });
-  return { participant, isNew: true };
 }
 
 /**
@@ -203,23 +249,26 @@ export async function resumeParticipantById(
   code: string,
   participantId: string
 ): Promise<Participant | null> {
-  const redis = getRedis();
   const participants = await getParticipants(code);
   const participant = participants.find((p) => p.participantId === participantId);
   if (!participant) return null;
 
-  participant.lastSeenAt = Date.now();
-  await redis.set(keyParticipants(code), participants, { ex: SESSION_TTL_SECONDS });
-  return participant;
+  const now = Date.now();
+  await touchParticipant(code, participantId, now);
+  return { ...participant, lastSeenAt: now };
 }
 
-export async function touchParticipant(code: string, participantId: string): Promise<void> {
+export async function touchParticipant(
+  code: string,
+  participantId: string,
+  now = Date.now()
+): Promise<void> {
   const redis = getRedis();
-  const participants = await getParticipants(code);
-  const p = participants.find((x) => x.participantId === participantId);
-  if (!p) return;
-  p.lastSeenAt = Date.now();
-  await redis.set(keyParticipants(code), participants, { ex: SESSION_TTL_SECONDS });
+  await redis.eval(
+    TOUCH_PARTICIPANT_SCRIPT,
+    [keyParticipants(code)],
+    [participantId, now, SESSION_TTL_SECONDS]
+  );
 }
 
 export async function getSubmission(code: string, participantId: string): Promise<Submission> {
@@ -303,4 +352,3 @@ export async function saveProgress(
   await redis.set(keySubmission(code, participantId), current, { ex: SESSION_TTL_SECONDS });
   return current;
 }
-

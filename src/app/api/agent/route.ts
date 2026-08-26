@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getOpenAI, CHAT_MODEL } from "@/lib/openaiClient";
+import { getOpenAI, CHAT_MODEL, USE_CASE_MODEL } from "@/lib/openaiClient";
 import { buildStep1SystemPrompt, buildStep2SystemPrompt } from "@/config/block1Frizione";
 import {
   BLOCK2_FIELDS,
@@ -66,7 +66,7 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
 
   const openai = getOpenAI();
   const response = await openai.chat.completions.create({
-    model: CHAT_MODEL,
+    model: USE_CASE_MODEL,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
     temperature: 0.3,
     response_format: { type: "json_object" },

@@ -13,3 +13,4 @@ export function getOpenAI(): OpenAI {
 }
 
 export const CHAT_MODEL = "gpt-4o-mini";
+export const USE_CASE_MODEL = "gpt-4.1-mini";
