@@ -55,6 +55,7 @@ function normalizeMessages(messages: unknown): ChatTurn[] {
  * conversazione. Anche `done` è calcolato qui.
  */
 async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) {
+  const startedAt = Date.now();
   const values = context.values ?? {};
   const closedBefore = sanitizeClosedGroups(context.closedGroups);
   const remaining = remainingInterviewGroups(closedBefore);
@@ -73,6 +74,21 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
     reasoning_effort: "high",
     response_format: { type: "json_object" },
   });
+
+  console.log(
+    JSON.stringify({
+      level: "info",
+      message: "step4_ai_usage",
+      model: USE_CASE_MODEL,
+      reasoningEffort: "high",
+      durationMs: Date.now() - startedAt,
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      cachedInputTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      outputTokens: response.usage?.completion_tokens ?? 0,
+      reasoningTokens: response.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    })
+  );
 
   const raw = (response.choices[0]?.message?.content ?? "").trim();
   let parsed: {
