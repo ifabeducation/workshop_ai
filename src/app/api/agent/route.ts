@@ -166,12 +166,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "subsection non valida" }, { status: 400 });
     }
 
+    const startedAt = Date.now();
     const openai = getOpenAI();
     const response = await openai.chat.completions.create({
       model: CHAT_MODEL,
       messages: [{ role: "system", content: systemPrompt }, ...turns],
       temperature: 0.6,
     });
+
+    console.log(
+      JSON.stringify({
+        level: "info",
+        message: "support_ai_usage",
+        subsection,
+        model: CHAT_MODEL,
+        durationMs: Date.now() - startedAt,
+        inputTokens: response.usage?.prompt_tokens ?? 0,
+        cachedInputTokens: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+        outputTokens: response.usage?.completion_tokens ?? 0,
+        totalTokens: response.usage?.total_tokens ?? 0,
+      })
+    );
 
     // Gli assistenti del Blocco 1 sono di supporto: non concludono step, quindi
     // `finished` resta sempre false (il campo è mantenuto per AgentChat).
