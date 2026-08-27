@@ -70,7 +70,7 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   const response = await openai.chat.completions.create({
     model: USE_CASE_MODEL,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
-    temperature: 0.3,
+    reasoning_effort: "high",
     response_format: { type: "json_object" },
   });
 
