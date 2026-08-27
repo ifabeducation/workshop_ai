@@ -6,7 +6,6 @@ import {
   BLOCK2_SECTIONS,
   block2ValueLabel,
   isBlock2ValueFilled,
-  remainingInterviewGroups,
 } from "@/config/block2Form";
 import { calcolaEsiti, candidateAttive } from "@/lib/frizioneScoring";
 import {
@@ -36,7 +35,13 @@ export type UseCaseStepHandle = {
  *   2. scheda: gli stessi campi del template, precompilati e non modificabili
  *      manualmente, da confermare con l'export PDF in fondo.
  * La fase raggiunta vive lato server (`interviewDone`), così il rientro riapre
- * la scheda e non ricomincia la conversazione.
+ * la scheda e non ricomincia la conversazione. Il passaggio alla scheda non
+ * dipende da un'autorizzazione esterna: lo decide la conversazione stessa,
+ * tramite `block2.canProceedToUseCase` (vedi lib/types.ts e
+ * config/block2Form.ts) — vero quando l'intervista è naturalmente completa o
+ * quando il partecipante ha confermato esplicitamente di voler procedere.
+ * Una volta vero resta vero: tornare all'intervista e poi cliccare di nuovo
+ * "Procedi allo Use Case" riapre la stessa scheda, senza rigenerarla.
  */
 export default function UseCaseStep({
   code,
@@ -57,14 +62,11 @@ export default function UseCaseStep({
   onSaved: (data: Block2Submission) => void;
   ref?: Ref<UseCaseStepHandle>;
 }) {
-  const initiallyNaturallyComplete = remainingInterviewGroups(block2?.closedGroups).length === 0;
-  const initiallyAuthorized = Boolean(block2?.facilitatorUseCaseAuthorized);
   const [values, setValues] = useState<Record<string, Block2FieldValue>>(block2?.values ?? {});
   const [chatLog, setChatLog] = useState<ChatMessage[]>(block2?.chatLog ?? []);
   const [closedGroups, setClosedGroups] = useState<string[]>(block2?.closedGroups ?? []);
   const [phase, setPhase] = useState<"intervista" | "scheda">(
-    block2?.completedAt ||
-      (block2?.interviewDone && (initiallyNaturallyComplete || initiallyAuthorized))
+    block2?.completedAt || (block2?.interviewDone && block2?.canProceedToUseCase)
       ? "scheda"
       : "intervista"
   );
@@ -95,9 +97,11 @@ export default function UseCaseStep({
   const compiled = BLOCK2_SECTIONS.flatMap((s) => s.fields).filter((f) =>
     isBlock2ValueFilled(values[f.id])
   ).length;
-  const naturallyComplete = remainingInterviewGroups(closedGroups).length === 0;
-  const facilitatorAuthorized = Boolean(block2?.facilitatorUseCaseAuthorized);
-  const canShowScheda = Boolean(block2?.completedAt) || naturallyComplete || facilitatorAuthorized;
+  // Letto direttamente dalla prop (non da uno stato locale copiato una volta
+  // sola): così, se la conversazione lo determina mentre il partecipante è
+  // già altrove, il valore aggiornato arriva al prossimo salvataggio/poll.
+  const canProceedToUseCase = Boolean(block2?.canProceedToUseCase);
+  const canShowScheda = Boolean(block2?.completedAt) || canProceedToUseCase;
   const effectivePhase = phase === "scheda" && canShowScheda ? "scheda" : "intervista";
 
   useEffect(() => {
@@ -151,7 +155,11 @@ export default function UseCaseStep({
     },
   }));
 
-  /** Un turno di intervista: i campi ricavati entrano nella scheda e si salvano. */
+  /**
+   * Un turno di intervista: i campi ricavati entrano nella scheda e si
+   * salvano, insieme allo stato della conclusione (vedi InterviewTurn) — è la
+   * conversazione stessa a decidere, turno per turno, se si può procedere.
+   */
   async function handleTurn(turn: InterviewTurn) {
     const merged = { ...values, ...turn.fields };
     setValues(merged);
@@ -162,6 +170,10 @@ export default function UseCaseStep({
       values: merged,
       chatLog: turn.chatLog,
       closedGroups: turn.closedGroups,
+      awaitingFinishConfirmation: turn.awaitingFinishConfirmation,
+      // Una volta vero, resta vero: non lo si fa mai regredire da un turno che
+      // per qualunque motivo lo restituisse false.
+      canProceedToUseCase: block2?.canProceedToUseCase || turn.canProceedToUseCase,
       updatedAt: nowMs(),
     };
     try {
@@ -173,15 +185,15 @@ export default function UseCaseStep({
     }
   }
 
-  /** Fine dell'intervista decisa dall'agente: si apre la scheda da confermare. */
-  async function openScheda(viaFacilitatorAuthorization = false) {
+  /**
+   * Apre la scheda da confermare. Ci si arriva quando `canProceedToUseCase` è
+   * vero (intervista completa o conclusione confermata): non rigenera né
+   * tocca `values`/`chatLog`/`closedGroups`, quindi riaprirla una seconda
+   * volta (dopo essere tornati all'intervista) mostra la stessa scheda.
+   */
+  async function openScheda() {
     setPhase("scheda");
-    const now = nowMs();
-    const data: Block2Submission = {
-      interviewDone: true,
-      facilitatorAuthorizationUsedAt: viaFacilitatorAuthorization ? now : undefined,
-      updatedAt: now,
-    };
+    const data: Block2Submission = { interviewDone: true, updatedAt: nowMs() };
     try {
       await submitBlock2(code, participantId, data);
       onSaved(data);
@@ -242,9 +254,9 @@ export default function UseCaseStep({
         closedGroups={closedGroups}
         chatLog={chatLog}
         onTurn={handleTurn}
-        facilitatorAuthorized={facilitatorAuthorized}
-        onDone={() => void openScheda(false)}
-        onAuthorizedProceed={() => void openScheda(true)}
+        awaitingFinishConfirmation={Boolean(block2?.awaitingFinishConfirmation)}
+        canProceedToUseCase={canProceedToUseCase}
+        onProceed={() => void openScheda()}
       />
     );
   }

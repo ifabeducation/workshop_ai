@@ -100,11 +100,24 @@ export type Step3Decision = {
  * template non richiede modifiche al modello dati né alle API.
  *
  * I valori arrivano esclusivamente dall'intervista dell'agente (`chatLog`).
- * `closedGroups` sono gli
- * argomenti dell'intervista già affrontati: sono loro, non il conteggio dei
- * campi, a dire quanto manca (un argomento si chiude anche se il partecipante
- * non sa rispondere). `interviewDone` distingue "sto ancora parlando" da "sono
- * sulla scheda", così il rientro riapre la fase giusta.
+ * `closedGroups` sono gli argomenti dell'intervista già affrontati: sono loro,
+ * non il conteggio dei campi, a dire quanto manca (un argomento si chiude
+ * anche se il partecipante non sa rispondere). `interviewDone` distingue "sto
+ * ancora parlando" da "sono sulla scheda", così il rientro riapre la fase
+ * giusta.
+ *
+ * Il passaggio allo Use Case non dipende da un'autorizzazione esterna: lo
+ * decide la conversazione stessa (vedi api/agent/route.ts e
+ * buildUseCaseInterviewSystemPrompt in config/block2Form.ts).
+ * `awaitingFinishConfirmation` è vero mentre l'agente ha appena chiesto
+ * conferma di procedere nonostante campi incompleti (così il turno successivo
+ * sa di dover interpretare la risposta come sì/no a quella domanda).
+ * `canProceedToUseCase` è la vera e propria autorizzazione, raggiunta o
+ * quando l'intervista è naturalmente completa o quando il partecipante
+ * conferma esplicitamente di voler procedere comunque: una volta vero resta
+ * vero (persistito), così tornare allo Step 4 e poi cliccare di nuovo
+ * "Procedi allo Use Case" riapre subito la scheda, senza rifare l'intervista
+ * né la conferma.
  */
 export type Block2FieldValue = string | string[];
 
@@ -113,12 +126,8 @@ export type Block2Submission = {
   chatLog?: ChatMessage[];
   closedGroups?: string[];
   interviewDone?: boolean;
-  /** Permesso eccezionale, concesso solo dal facilitatore a questa submission. */
-  facilitatorUseCaseAuthorized?: boolean;
-  facilitatorAuthorizedAt?: number;
-  facilitatorAuthorizedBy?: string;
-  facilitatorAuthorizationRevokedAt?: number;
-  facilitatorAuthorizationUsedAt?: number;
+  awaitingFinishConfirmation?: boolean;
+  canProceedToUseCase?: boolean;
   updatedAt?: number;
   completedAt?: number;
 };

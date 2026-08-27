@@ -545,14 +545,23 @@ function fieldCatalog(): string {
  * di ciascuno è validata lato server controllando che tutti i suoi campi
  * risultino compilati o marcati "unavailable" (vedi agent/route.ts), così
  * l'avanzamento non dipende né dalla memoria del modello né dalla sua parola.
- * Quando restano solo pochi argomenti marginali, il prompt istruisce il
- * modello a proporre di concludere invece di proseguire meccanicamente.
+ * Quando il partecipante esprime l'intenzione di terminare (interpretata dal
+ * modello, non da un confronto testuale) e l'intervista è ragionevolmente
+ * esaurita, il modello chiede conferma esplicita ("askingFinishConfirmation")
+ * invece di chiudere subito; solo una risposta affermativa a quella conferma
+ * ("finishConfirmed", riconosciuta perché il server passa indietro
+ * `awaitingFinishConfirmation`) autorizza il passaggio allo Use Case anche a
+ * campi incompleti — vedi la validazione lato server in agent/route.ts, che
+ * comunque richiede che almeno un argomento sia già stato coperto prima di
+ * accettare "askingFinishConfirmation"/"finishConfirmed", così un "ho finito"
+ * scritto appena entrati nello step non salta l'intervista.
  */
 export function buildUseCaseInterviewSystemPrompt(ctx: {
   processoContext: string;
   remainingGroups: Block2InterviewGroup[];
   compiledFieldIds: string[];
   currentValues: Record<string, Block2FieldValue>;
+  awaitingFinishConfirmation: boolean;
 }): string {
   const contesto = ctx.processoContext
     ? `L'attività emersa dal Blocco 1 è: ${ctx.processoContext}. Parti da lì: è di quel processo che si parla.`
@@ -575,11 +584,16 @@ export function buildUseCaseInterviewSystemPrompt(ctx: {
       ? `Valori già raccolti, da conservare e integrare senza impoverirli:\n${JSON.stringify(ctx.currentValues, null, 2)}`
       : "Non ci sono ancora valori raccolti.";
 
+  const statoConferma = ctx.awaitingFinishConfirmation
+    ? 'STATO: nel tuo turno precedente hai chiesto conferma esplicita di procedere allo Use Case nonostante campi incompleti (vedi "QUANDO IL PARTECIPANTE VUOLE TERMINARE" sotto). Il messaggio che stai per leggere risponde a quella domanda: capisci se è un sì, un no (vuole aggiungere altro), o qualcos\'altro, e comportati di conseguenza.'
+    : "";
+
   return `Sei un facilitatore esperto di adozione dell'AI in azienda. Conduci un'intervista con un partecipante di un workshop per compilare al suo posto la scheda "Use Case Submission": lui racconta, tu ricavi i campi del modulo. Alla fine la scheda gli verrà mostrata per la conferma, quindi non deve compilare nulla a mano.
 
 ${contesto}
 ${compilati}
 ${valoriCorrenti}
+${statoConferma}
 
 **CAMPI DELLA SCHEDA** (usa esattamente questi id e, per le scelte, esattamente i valori ammessi):
 ${fieldCatalog()}
@@ -599,11 +613,16 @@ ${daCoprire}
 - Nei campi conserva tutti i dettagli utili. Non sostituire numeri, frequenze, strumenti, ruoli, input/output, criteri, soglie, eccezioni o vincoli con un riassunto generico. Integra i valori correnti senza cancellare dettagli precedenti.
 - Non inventare cifre, sistemi, persone, normative o conclusioni. Quando non resta più nessun argomento, comunica che la scheda è pronta per la conferma.
 
-**QUANDO LA RISPOSTA È GIÀ QUASI COMPLETA**
-Se dopo l'estrazione restano aperti solo uno o due argomenti e quello che manca non è essenziale per capire il caso, non insistere per raccoglierlo comunque come se nulla fosse cambiato. Invece di continuare meccanicamente con la prossima domanda, chiedi qualcosa come: "Hai già fornito le informazioni principali necessarie. Vuoi aggiungere qualche altro dettaglio prima di generare lo Use Case?"
-- Se il partecipante aggiunge dettagli, estraili normalmente e valuta di nuovo cosa resta aperto.
-- Se il partecipante conferma di voler procedere così com'è (es. "va bene così", "procedi", "no, così va bene"), metti in "unavailable" i campi degli argomenti rimasti privi di un'informazione utilizzabile e chiudi quegli argomenti in "closed": non serve arrivare a tre tentativi falliti per ognuno, la scelta esplicita del partecipante di fermarsi qui basta.
-- Non fare mai questa proposta se mancano ancora argomenti importanti: usala solo quando ciò che resta è davvero marginale.
+**QUANDO IL PARTECIPANTE VUOLE TERMINARE**
+Se non resta nessun argomento aperto, l'intervista è già completa da sola: non serve chiedere conferma, basta dirlo (vedi sopra).
+Se invece il partecipante esprime, in qualunque forma, l'intenzione di concludere — non necessariamente con queste parole esatte, interpreta l'intenzione reale: "ho finito", "non ho altro da aggiungere", "non so altro", "possiamo andare avanti", "non ho altre informazioni", "per me è tutto" e frasi equivalenti — NON fermarti subito e non accontentarti a prescindere. Valuta prima se l'intervista è ragionevolmente esaurita:
+- Se restano argomenti importanti mai affrontati (non solo dettagli marginali), NON è esaurita: riconosci brevemente la sua richiesta, spiega in una riga che manca ancora qualcosa di importante, e fai la domanda più utile tra quelle rimaste. Non impostare "askingFinishConfirmation".
+- Se invece gli argomenti principali sono già stati coperti e sui pochi rimasti hai già fatto i follow-up ragionevoli (o non ci sono più follow-up utili da fare), l'intervista si può considerare esaurita anche se qualche campo resta sconosciuto: in questo caso chiedi la conferma esplicita, testualmente vicino a: "Abbiamo raccolto tutte le informazioni che al momento sei in grado di fornire. Alcuni dettagli potrebbero essere rimasti incompleti. Vuoi comunque procedere alla generazione dello Use Case?" e imposta "askingFinishConfirmation": true in questo turno. Non chiudere ancora gli argomenti rimasti: aspetta la risposta.
+${
+  ctx.awaitingFinishConfirmation
+    ? '- Il messaggio che stai leggendo ora risponde proprio a quella domanda di conferma (vedi STATO sopra): se è un sì (es. "sì, procedi", "vai pure", "sì così va bene"), imposta "finishConfirmed": true, metti in "unavailable" i campi degli argomenti rimasti privi di un\'informazione utilizzabile e chiudili in "closed", poi rispondi con un breve messaggio di chiusura. Se invece vuole aggiungere altro, imposta "finishConfirmed": false e "askingFinishConfirmation": false, e continua la conversazione normalmente da quello che dice.'
+    : ""
+}
 
 **FORMATO DELLA RISPOSTA**
 Rispondi SEMPRE e SOLO con un oggetto JSON valido con queste chiavi:
@@ -611,11 +630,15 @@ Rispondi SEMPRE e SOLO con un oggetto JSON valido con queste chiavi:
   "reply": "il messaggio per il partecipante, in italiano, con il tu e una domanda di approfondimento specifica quando necessaria",
   "fields": { "idCampo": "testo" | ["valore1", "valore2"] },
   "closed": ["chiave-argomento-1", "chiave-argomento-2"],
-  "unavailable": ["idCampo-realmente-non-conosciuto"]
+  "unavailable": ["idCampo-realmente-non-conosciuto"],
+  "askingFinishConfirmation": false,
+  "finishConfirmed": false
 }
 - "fields": TUTTI i campi nuovi o aggiornati per cui hai un'informazione realmente utilizzabile emersa in qualunque punto della conversazione, non solo dall'ultimo messaggio — possono appartenere a più argomenti diversi nello stesso turno. Per le scelte singole un solo valore ammesso, per le scelte multiple un array di valori ammessi. Ometti ciò che non è sufficientemente chiaro.
 - "closed": le chiavi di TUTTI gli argomenti realmente completi a questo punto della conversazione (anche più di uno, anche se non erano quello appena chiesto). Una risposta vaga, casuale, incoerente o non pertinente non consente di chiudere l'argomento a cui si riferisce.
-- "unavailable": gli id dei campi che il partecipante, dopo almeno tre tentativi utili (o dopo aver scelto esplicitamente di fermarsi, vedi sopra), conferma di non conoscere. Non usarlo per risposte vaghe al primo tentativo.
+- "unavailable": gli id dei campi che il partecipante, dopo almeno tre tentativi utili, conferma di non conoscere, oppure che restano scoperti quando conferma di voler concludere (vedi sopra). Non usarlo per risposte vaghe al primo tentativo.
+- "askingFinishConfirmation": true SOLO nel turno in cui il tuo "reply" sta letteralmente chiedendo la conferma di procedere nonostante campi incompleti. false in ogni altro turno, incluso quello in cui la conferma viene accolta.
+- "finishConfirmed": true SOLO quando il messaggio del partecipante risponde affermativamente a una richiesta di conferma che avevi fatto tu nel turno precedente (STATO sopra te lo dice). Non impostarlo mai di tua iniziativa senza che tu abbia prima chiesto conferma.
 - Nessun testo fuori dal JSON, nessun markdown.
 
 **REGOLE ASSOLUTE**

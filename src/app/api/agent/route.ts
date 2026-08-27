@@ -18,7 +18,17 @@ type AgentContext = {
   processoContext?: string;
   values?: Record<string, Block2FieldValue>;
   closedGroups?: string[];
+  /** Vero se il turno precedente dell'agente ha chiesto conferma di procedere nonostante campi incompleti. */
+  awaitingFinishConfirmation?: boolean;
 };
+
+/**
+ * Almeno un argomento deve essere già stato chiuso prima che il server accetti
+ * una richiesta di chiusura anticipata (conferma chiesta o accolta): impedisce
+ * che un "ho finito" scritto al primo messaggio salti l'intervista, anche se
+ * il modello — per errore o per assecondare l'utente — la propone comunque.
+ */
+const MIN_CLOSED_GROUPS_BEFORE_FINISH = 1;
 
 /**
  * Gli assistenti del Blocco 1 sono di supporto: spiegano e chiariscono, non
@@ -56,24 +66,33 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   const values = context.values ?? {};
   const closedBefore = sanitizeClosedGroups(context.closedGroups);
   const remaining = remainingInterviewGroups(closedBefore);
+  const awaitingFinishConfirmationBefore = Boolean(context.awaitingFinishConfirmation);
 
   const systemPrompt = buildUseCaseInterviewSystemPrompt({
     processoContext: context.processoContext ?? "",
     remainingGroups: remaining,
     compiledFieldIds: BLOCK2_FIELDS.filter((f) => isBlock2ValueFilled(values[f.id])).map((f) => f.id),
     currentValues: values,
+    awaitingFinishConfirmation: awaitingFinishConfirmationBefore,
   });
 
   const openai = getOpenAI();
   const response = await openai.chat.completions.create({
     model: USE_CASE_MODEL,
     messages: [{ role: "system", content: systemPrompt }, ...messages],
-    temperature: 0.3,
+    // GPT-5 mini non supporta il parametro temperature (solo il default): va omesso.
     response_format: { type: "json_object" },
   });
 
   const raw = (response.choices[0]?.message?.content ?? "").trim();
-  let parsed: { reply?: unknown; fields?: unknown; closed?: unknown; unavailable?: unknown } = {};
+  let parsed: {
+    reply?: unknown;
+    fields?: unknown;
+    closed?: unknown;
+    unavailable?: unknown;
+    askingFinishConfirmation?: unknown;
+    finishConfirmed?: unknown;
+  } = {};
   try {
     parsed = JSON.parse(raw) as typeof parsed;
   } catch {
@@ -108,13 +127,29 @@ async function runUseCaseInterview(messages: ChatTurn[], context: AgentContext) 
   });
   const closedGroups = sanitizeClosedGroups(completeClosed, closedBefore);
   const remainingAfter = remainingInterviewGroups(closedGroups);
+  const naturallyComplete = remainingAfter.length === 0;
+
+  // Rete di sicurezza: la chiusura anticipata (chiedere o accogliere la
+  // conferma di procedere con campi incompleti) è valida solo se è già stato
+  // chiuso almeno un argomento. Così un "ho finito" al primissimo messaggio
+  // non ottiene né la domanda di conferma né, tantomeno, l'accesso — anche se
+  // il modello, per assecondare l'utente, la propone comunque.
+  const enoughEngagementForFinish = closedBefore.length >= MIN_CLOSED_GROUPS_BEFORE_FINISH;
+  const finishConfirmed =
+    awaitingFinishConfirmationBefore && enoughEngagementForFinish && Boolean(parsed.finishConfirmed);
+  const askingFinishConfirmation =
+    !finishConfirmed && enoughEngagementForFinish && Boolean(parsed.askingFinishConfirmation);
+
+  const canProceedToUseCase = naturallyComplete || finishConfirmed;
 
   return NextResponse.json({
     reply,
     fields,
     closedGroups,
     remaining: remainingAfter.map((g) => g.key),
-    done: remainingAfter.length === 0,
+    done: naturallyComplete,
+    awaitingFinishConfirmation: askingFinishConfirmation,
+    canProceedToUseCase,
     finished: false,
   });
 }
@@ -143,7 +178,7 @@ export async function POST(req: Request) {
     const response = await openai.chat.completions.create({
       model: CHAT_MODEL,
       messages: [{ role: "system", content: systemPrompt }, ...turns],
-      temperature: 0.6,
+      // GPT-5 nano non supporta il parametro temperature (solo il default): va omesso.
     });
 
     // Gli assistenti del Blocco 1 sono di supporto: non concludono step, quindi

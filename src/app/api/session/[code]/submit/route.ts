@@ -44,24 +44,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
       const remaining = remainingInterviewGroups(
         block2.closedGroups ?? current.block2?.closedGroups
       );
+      // Si può confermare la scheda (completedAt) solo se l'intervista è
+      // naturalmente completa o se la conversazione ha già portato
+      // all'autorizzazione a procedere (vedi Block2Submission.canProceedToUseCase):
+      // il passaggio non dipende più da un'autorizzazione esterna, ma resta
+      // vietato dichiarare conclusa una scheda che non lo è davvero.
       if (
         block2.completedAt &&
         remaining.length > 0 &&
-        !current.block2?.facilitatorUseCaseAuthorized
+        !current.block2?.canProceedToUseCase &&
+        !block2.canProceedToUseCase
       ) {
         return NextResponse.json(
-          { error: "Lo Use Case è ancora incompleto e non è stato autorizzato dal facilitatore" },
+          { error: "Lo Use Case è ancora incompleto: continua la conversazione o concludila esplicitamente." },
           { status: 403 }
         );
       }
-      // I campi di autorizzazione sono riservati alla route autenticata del
-      // facilitatore: il partecipante può salvare soltanto il proprio lavoro.
       submission = await saveBlock2(code, participantId, {
         values: block2.values,
         chatLog: block2.chatLog,
         closedGroups: block2.closedGroups,
         interviewDone: block2.interviewDone,
-        facilitatorAuthorizationUsedAt: block2.facilitatorAuthorizationUsedAt,
+        awaitingFinishConfirmation: block2.awaitingFinishConfirmation,
+        canProceedToUseCase: block2.canProceedToUseCase,
         updatedAt: block2.updatedAt,
         completedAt: block2.completedAt,
       });

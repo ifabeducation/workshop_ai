@@ -10,7 +10,6 @@ import {
   fetchAggregate,
   unlockStep,
   deleteSession,
-  setUseCaseAuthorization,
 } from "@/lib/clientApi";
 import { clearFacilitatorCode, saveFacilitatorCode } from "@/lib/participantStorage";
 import { DOMANDE } from "@/config/block1Frizione";
@@ -51,7 +50,6 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
   // Partecipante di cui si sta generando il PDF della scheda Use Case.
   const [pdfFor, setPdfFor] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [authorizationFor, setAuthorizationFor] = useState<string | null>(null);
 
   useEffect(() => {
     facilitatorMe()
@@ -155,23 +153,6 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
       setError(err instanceof Error ? err.message : "Errore durante l'esportazione Excel");
     } finally {
       setExporting(false);
-    }
-  }
-
-  async function handleUseCaseAuthorization(participantId: string, authorized: boolean) {
-    setAuthorizationFor(participantId);
-    setError(null);
-    try {
-      const { submission } = await setUseCaseAuthorization(code, participantId, authorized);
-      setRows((currentRows) =>
-        currentRows.map((item) =>
-          item.participant.participantId === participantId ? { ...item, submission } : item
-        )
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Errore durante l'aggiornamento dell'autorizzazione");
-    } finally {
-      setAuthorizationFor(null);
     }
   }
 
@@ -347,24 +328,24 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                         : "—";
                     const naturallyComplete =
                       remainingInterviewGroups(submission.block2?.closedGroups).length === 0;
-                    const facilitatorAuthorized = Boolean(
-                      submission.block2?.facilitatorUseCaseAuthorized
-                    );
+                    const canProceed = Boolean(submission.block2?.canProceedToUseCase);
                     const hasInterviewWork = Boolean(
                       submission.block2?.chatLog?.some((message) => message.role === "user") ||
                         useCaseFilled > 0
                     );
+                    // Il passaggio allo Use Case lo decide la conversazione stessa (vedi
+                    // Block2Submission.canProceedToUseCase): qui si mostra solo lo stato.
                     const step4Status = submission.block2?.completedAt || naturallyComplete
                       ? "Completo"
-                      : facilitatorAuthorized
-                        ? "Autorizzato dal facilitatore"
+                      : canProceed
+                        ? "Pronto per lo Use Case"
                         : hasInterviewWork
                           ? "In compilazione"
                           : "Incompleto";
                     const step4StatusClass =
                       step4Status === "Completo"
                         ? "bg-emerald-50 text-emerald-700"
-                        : step4Status === "Autorizzato dal facilitatore"
+                        : step4Status === "Pronto per lo Use Case"
                           ? "bg-blue-50 text-blue-700"
                           : step4Status === "In compilazione"
                             ? "bg-amber-50 text-amber-700"
@@ -423,29 +404,6 @@ export default function FacilitatorDashboard({ params }: { params: Promise<{ cod
                               {step4Status}
                             </span>
                             <span className="text-[11px] text-ifab-text-muted">Campi: {useCaseLabel}</span>
-                            {!submission.block2?.completedAt && !naturallyComplete && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void handleUseCaseAuthorization(
-                                    participant.participantId,
-                                    !facilitatorAuthorized
-                                  )
-                                }
-                                disabled={authorizationFor === participant.participantId}
-                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
-                                  facilitatorAuthorized
-                                    ? "border-red-200 text-red-700 hover:bg-red-50"
-                                    : "border-ifab-blue text-ifab-blue hover:bg-ifab-blue hover:text-white"
-                                }`}
-                              >
-                                {authorizationFor === participant.participantId
-                                  ? "Aggiornamento..."
-                                  : facilitatorAuthorized
-                                    ? "Revoca autorizzazione"
-                                    : "Autorizza accesso allo Use Case"}
-                              </button>
-                            )}
                           </div>
                         </td>
                         <td className="py-2 pr-4">

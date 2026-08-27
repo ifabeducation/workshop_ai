@@ -97,13 +97,6 @@ export function unlockStep(code: string, step: string, value: boolean) {
   });
 }
 
-export function setUseCaseAuthorization(code: string, participantId: string, authorized: boolean) {
-  return jsonFetch<{ submission: Submission }>(`/api/session/${code}/use-case-authorization`, {
-    method: "POST",
-    body: JSON.stringify({ participantId, authorized }),
-  });
-}
-
 export function submitStep1(code: string, participantId: string, data: import("./types").Step1Submission) {
   return jsonFetch<{ submission: Submission }>(`/api/session/${code}/submit`, {
     method: "POST",

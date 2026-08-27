@@ -15,6 +15,10 @@ export type InterviewTurn = {
   chatLog: ChatMessage[];
   fields: Record<string, Block2FieldValue>;
   closedGroups: string[];
+  /** L'ultimo turno dell'agente ha chiesto conferma di procedere nonostante campi incompleti. */
+  awaitingFinishConfirmation: boolean;
+  /** Vero se, dopo questo turno, il partecipante può raggiungere lo Use Case. */
+  canProceedToUseCase: boolean;
 };
 
 /**
@@ -23,7 +27,13 @@ export type InterviewTurn = {
  * dalla domanda generica su com'è il processo oggi, poi l'agente chiede solo
  * quello che non ha ancora sentito, un argomento per volta (gli argomenti
  * raggruppano i campi che si possono raccogliere con una domanda sola).
- * Quando non resta più nulla da chiedere si passa alla scheda da confermare.
+ *
+ * Il passaggio allo Use Case lo decide la conversazione: quando non resta più
+ * nulla da chiedere, oppure quando il partecipante dichiara di aver finito e
+ * l'agente — dopo aver verificato che gli argomenti principali siano coperti
+ * — chiede conferma esplicita e la ottiene, compare il pulsante "Procedi allo
+ * Use Case". Nessuna autorizzazione esterna: lo stato vive nella submission
+ * (vedi UseCaseStep.tsx).
  */
 export default function UseCaseInterview({
   processoContext,
@@ -31,20 +41,20 @@ export default function UseCaseInterview({
   values,
   closedGroups,
   chatLog,
-  facilitatorAuthorized,
+  awaitingFinishConfirmation,
+  canProceedToUseCase,
   onTurn,
-  onDone,
-  onAuthorizedProceed,
+  onProceed,
 }: {
   processoContext: string;
   selectedAction: string;
   values: Record<string, Block2FieldValue>;
   closedGroups: string[];
   chatLog: ChatMessage[];
-  facilitatorAuthorized: boolean;
+  awaitingFinishConfirmation: boolean;
+  canProceedToUseCase: boolean;
   onTurn: (turn: InterviewTurn) => void;
-  onDone: () => void;
-  onAuthorizedProceed: () => void;
+  onProceed: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(
     chatLog.length > 0 ? chatLog : [{ role: "assistant", content: INITIAL_MESSAGE_USE_CASE_INTERVIEW }]
@@ -54,8 +64,12 @@ export default function UseCaseInterview({
   const [error, setError] = useState<string | null>(null);
   // Stato dell'intervista tenuto anche qui: il turno successivo deve partire da
   // quello che ha risposto il server, non dallo stato del componente padre
-  // (che si aggiorna un attimo dopo).
+  // (che si aggiorna un attimo dopo). Il componente rimonta ad ogni rientro
+  // nell'intervista (vedi UseCaseStep), quindi i valori iniziali restano
+  // comunque allineati alla submission persistita.
   const [closed, setClosed] = useState<string[]>(closedGroups);
+  const [awaiting, setAwaiting] = useState(awaitingFinishConfirmation);
+  const [canProceed, setCanProceed] = useState(canProceedToUseCase);
   const valuesRef = useRef<Record<string, Block2FieldValue>>(values);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,9 +90,9 @@ export default function UseCaseInterview({
     }
   }, [messages, loading]);
 
-  async function handleSend(e?: React.FormEvent) {
+  async function handleSend(e?: React.FormEvent, textOverride?: string) {
     e?.preventDefault();
-    const testo = input.trim();
+    const testo = (textOverride ?? input).trim();
     if (!testo || loading) return;
 
     dictation.stop();
@@ -95,7 +109,12 @@ export default function UseCaseInterview({
         body: JSON.stringify({
           subsection: "useCaseInterview",
           messages: nextMessages,
-          context: { processoContext, values: valuesRef.current, closedGroups: closed },
+          context: {
+            processoContext,
+            values: valuesRef.current,
+            closedGroups: closed,
+            awaitingFinishConfirmation: awaiting,
+          },
         }),
       });
       const data = await res.json();
@@ -108,15 +127,24 @@ export default function UseCaseInterview({
       const reply: string = data.reply ?? "";
       const fields: Record<string, Block2FieldValue> = data.fields ?? {};
       const nuoviChiusi: string[] = Array.isArray(data.closedGroups) ? data.closedGroups : closed;
+      const nuovoAwaiting = Boolean(data.awaitingFinishConfirmation);
+      // Una volta vero, resta vero: nessuna risposta successiva lo fa regredire.
+      const nuovoCanProceed = canProceed || Boolean(data.canProceedToUseCase);
 
       const finalMessages: ChatMessage[] = [...nextMessages, { role: "assistant", content: reply }];
       setMessages(finalMessages);
       setClosed(nuoviChiusi);
+      setAwaiting(nuovoAwaiting);
+      setCanProceed(nuovoCanProceed);
       valuesRef.current = { ...valuesRef.current, ...fields };
-      onTurn({ chatLog: finalMessages, fields, closedGroups: nuoviChiusi });
+      onTurn({
+        chatLog: finalMessages,
+        fields,
+        closedGroups: nuoviChiusi,
+        awaitingFinishConfirmation: nuovoAwaiting,
+        canProceedToUseCase: nuovoCanProceed,
+      });
       speech.speak(reply);
-
-      if (data.done) onDone();
     } catch {
       setError("Errore di connessione: riprova a inviare la risposta.");
       setMessages(nextMessages);
@@ -239,23 +267,46 @@ export default function UseCaseInterview({
           {dictation.error && <p className="mt-1.5 px-1 text-xs text-amber-700">{dictation.error}</p>}
           {error && <p className="mt-1.5 px-1 text-xs text-red-600">{error}</p>}
         </form>
+
+        {/* L'agente ha appena chiesto conferma di procedere nonostante campi
+            incompleti: due risposte rapide, oltre alla possibilità di scrivere
+            (o dire) liberamente — in entrambi i casi risponde la stessa logica. */}
+        {awaiting && !loading && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-ifab-border bg-ifab-bg-soft px-4 py-3">
+            <button
+              type="button"
+              onClick={() => void handleSend(undefined, "Sì, procedi")}
+              className="rounded-lg bg-ifab-navy px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-ifab-navy-deep"
+            >
+              Sì, procedi
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSend(undefined, "No, voglio aggiungere altro")}
+              className="rounded-lg border border-ifab-border px-3 py-1.5 text-xs font-semibold text-ifab-navy transition hover:border-ifab-blue hover:text-ifab-blue"
+            >
+              No, voglio aggiungere altro
+            </button>
+          </div>
+        )}
       </section>
 
       <p className="text-xs text-ifab-text-muted">
-        La scheda verrà generata automaticamente quando l&apos;assistente avrà raccolto informazioni sufficienti.
+        La scheda si genera da sola quando l&apos;assistente ha raccolto informazioni sufficienti, oppure quando
+        confermi di voler procedere nonostante qualche dettaglio incompleto.
       </p>
 
-      {facilitatorAuthorized && (
-        <section className="rounded-xl border border-ifab-blue/30 bg-ifab-blue/5 p-4">
-          <p className="text-sm font-semibold text-ifab-navy">Accesso autorizzato dal facilitatore</p>
+      {canProceed && (
+        <section className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-ifab-navy">Puoi procedere allo Use Case</p>
           <p className="mt-1 text-xs leading-relaxed text-ifab-text-muted">
-            Puoi continuare l&apos;intervista oppure procedere allo Use Case. Le informazioni non raccolte saranno
-            indicate esplicitamente come non disponibili.
+            Puoi continuare l&apos;intervista se vuoi aggiungere altro, oppure procedere quando vuoi: la scheda
+            userà le informazioni raccolte finora.
           </p>
           <button
             type="button"
-            onClick={onAuthorizedProceed}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-ifab-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-ifab-navy-deep"
+            onClick={onProceed}
+            className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
           >
             Procedi allo Use Case <ArrowRight size={15} />
           </button>
